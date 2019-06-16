@@ -13,7 +13,7 @@
 # permissions and limitations under the License.
 
 [package]
-name = "network-router-rs"
+name = "router"
 version = "0.1.0"
 authors = ["Mats Kindahl <mats.kindahl@gmail.com>"]
 edition = "2018"
