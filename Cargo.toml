@@ -20,7 +20,7 @@ edition = "2018"
 
 [dependencies]
 yaml-rust = "0.4.3"
-tokio = "0.1.21"
+tokio = { git = "https://github.com/mkindahl/tokio.git", branch = "tcp-shutdown-fix" }
 log = "0.4.6"
 bytes = "0.4.7"
 env_logger = { version = "0.5", default-features = false }

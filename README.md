@@ -17,11 +17,68 @@ cargo build
 
 * Edit the `config.yaml` file.
 
-* Start the router
+* Start the router. 
 
   ```
-  target/debug/router
+  target/debug/router config.yaml
   ```
+
+# Configuration file format
+
+The confuguration file is in YAML and is split into separate sections
+(documents in YAML terminology) with one section for each forwarding
+configuration:
+
+```
+---
+protocol: udp
+mode: broadcast
+sources: [ 127.0.0.1:8080 ]
+destinations: [ 127.0.0.1:8081, 127.0.0.1:8082 ]
+```
+
+Each section can contain four different attributes:
+
+- **protocol** is the protocol that the section should use. It can be
+  either `udp` or `tcp`.
+- **mode** can be either `broadcast` or `round-robin` and the default
+  is `broadcast` for UDP and `round-robin` for TCP.
+  
+  - In broadcast mode, each packet will be sent to all destinations,
+    which only make sense for UDP.
+
+  - In round-robin mode, each packet will be sent to or connection
+    established with one target at a time in a round-robin fashion.
+
+- **sources** is a list of source addresses that the router should
+  listen on.
+  
+- **destinations** is a list of destination addresses that the router
+  should send packets or establish connections with.
+
+# Caveat
+
+For the TCP connection, shutdown does not currently work since the
+"shutdown" function for a `TcpStream` does not do anything at all
+(!). See [Issue #852](https://github.com/tokio-rs/tokio/issues/852) in
+(tokio-rs/tokio)[https://github.com/tokio-rs/tokio].
+
+A simple (but ugly) way around this is to apply the following patch to
+`tokio` repository:
+
+```
+diff --git a/tokio-tcp/src/stream.rs b/tokio-tcp/src/stream.rs
+index 1a00679..ea0205d 100644
+--- a/tokio-tcp/src/stream.rs
++++ b/tokio-tcp/src/stream.rs
+@@ -844,6 +844,7 @@ impl<'a> AsyncRead for &'a TcpStream {
+ 
+ impl<'a> AsyncWrite for &'a TcpStream {
+     fn shutdown(&mut self) -> Poll<(), io::Error> {
++        self.io.get_ref().shutdown(Shutdown::Write)?;
+         Ok(().into())
+     }
+```
 
 # Contribution
 

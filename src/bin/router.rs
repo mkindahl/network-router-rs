@@ -22,43 +22,97 @@ extern crate yaml_rust;
 
 use bytes::BytesMut;
 use router::config::{Config, Protocol};
+use std::env;
 use std::net::SocketAddr;
 use tokio::codec::BytesCodec;
-use tokio::net::{UdpFramed, UdpSocket};
+use tokio::net::{TcpListener, TcpStream, UdpFramed, UdpSocket};
 use tokio::prelude::*;
+
+// Spawn a new UDP session
+fn spawn_udp_session(source: SocketAddr, peers: Vec<SocketAddr>) {
+    let socket = UdpSocket::bind(&source).expect("unable to bind UDP socket");
+    let (mut writer, reader) = UdpFramed::new(socket, BytesCodec::new()).split();
+    tokio::spawn({
+        reader
+            .for_each(move |(bytes, _from): (BytesMut, SocketAddr)| {
+                let packet = bytes.freeze();
+                for peer in peers.iter() {
+                    writer.start_send((packet.clone(), peer.clone()))?;
+                }
+                writer.poll_complete()?;
+                Ok(())
+            })
+            .map_err(|err| error!("error: {}", err))
+            .map(|_| ())
+    });
+}
+
+/// Spawn a new TCP listener.
+fn spawn_tcp_listener(source: SocketAddr, destination: SocketAddr) {
+    let socket = TcpListener::bind(&source).expect("unable to bind TCP listener");
+
+    tokio::spawn({
+        socket
+            .incoming()
+            .for_each(move |client| {
+                spawn_tcp_session(client, destination.clone());
+                Ok(())
+            })
+            .map_err(|err| {
+                error!("error: {}", err);
+            })
+            .map(|_| ())
+    });
+}
+
+/// Spawn a new TCP session.
+fn spawn_tcp_session(client: TcpStream, destination: SocketAddr) {
+    tokio::spawn({
+        TcpStream::connect(&destination)
+            .and_then(|server| {
+                let (client_reader, client_writer) = client.split();
+                let (server_reader, server_writer) = server.split();
+                let client_to_server = tokio::io::copy(client_reader, server_writer)
+                    .and_then(|(_, _, mut server_writer)| {
+                        info!("Shutting down connection to server");
+                        server_writer.shutdown()
+                    })
+                    .map(|_| ());
+                let server_to_client = tokio::io::copy(server_reader, client_writer)
+                    .and_then(|(_, _, mut client_writer)| {
+                        info!("Shutting down connection to client");
+                        client_writer.shutdown()
+                    })
+                    .map(|_| ());
+                client_to_server.join(server_to_client)
+            })
+            .map(move |_| ())
+            .map_err(|err| {
+                error!("error: {}", err);
+            })
+    });
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
-    let config = Config::load_from_file("config.yaml")?;
+    let config_file = env::args().nth(1).unwrap_or("config.yaml".to_string());
+    let config = Config::read_from_file(&config_file)?;
 
     tokio::run(future::lazy(|| {
         for section in config.sections {
-            match section {
-                Protocol::Udp {
-                    ref source,
-                    ref destinations,
-                } => {
-                    let socket = UdpSocket::bind(source).unwrap();
-                    let (mut writer, reader) = UdpFramed::new(socket, BytesCodec::new()).split();
-                    let peers = destinations.clone();
-                    let forward_packet = move |(bytes, _from): (BytesMut, SocketAddr)| {
-                        let packet = bytes.freeze();
-                        for destination in peers.iter() {
-                            writer.start_send((packet.clone(), destination.clone()))?;
-                        }
-                        writer.poll_complete()?;
-                        Ok(())
-                    };
-
-                    tokio::spawn(future::lazy(move || {
-                        reader
-                            .for_each(forward_packet)
-                            .map_err(|err| error!("error: {}", err))
-                            .map(|_| ())
-                    }));
+            match section.protocol {
+                Protocol::Udp => {
+                    for source in section.sources {
+                        spawn_udp_session(source.clone(), section.destinations.clone());
+                    }
                 }
-                _ => (),
+
+                Protocol::Tcp => {
+                    for source in section.sources {
+                        spawn_tcp_listener(source.clone(), section.destinations[0].clone());
+                    }
+                }
             }
         }
         Ok(())

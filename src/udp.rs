@@ -12,8 +12,14 @@
 // implied.  See the License for the specific language governing
 // permissions and limitations under the License.
 
+use bytes::BytesMut;
+use std::net::SocketAddr;
+use tokio::codec::BytesCodec;
+use tokio::net::{UdpFramed, UdpSocket};
+use tokio::prelude::*;
+
 struct UdpSession {
-    socket: UdpSocket,
+    source: SocketAddr,
     peers: Vec<SocketAddr>,
 }
 
@@ -24,9 +30,35 @@ impl UdpSession {
             peers.push(*dest);
         }
         let session = UdpSession {
-            socket: UdpSocket::bind(&source)?,
+            source: source,
             peers: peers,
         };
         Ok(session)
+    }
+}
+
+impl future::IntoFuture for UdpSession {
+    type Future = future::Future<Item = Self::Item, Error = Self::Error>;
+    type Item = ();
+    type Error = ();
+
+    fn into_future(&self) {
+        let socket = UdpSocket::bind(&self.source)?;
+        let (mut writer, reader) = UdpFramed::new(socket, BytesCodec::new()).split();
+        let forward_packet = move |(bytes, _from): (BytesMut, SocketAddr)| {
+            let packet = bytes.freeze();
+            for peer in self.peers.iter() {
+                writer.start_send((packet.clone(), peer.clone()))?;
+            }
+            writer.poll_complete()?;
+            Ok(())
+        };
+
+        future::lazy(move || {
+            reader
+                .for_each(forward_packet)
+                .map_err(|err| error!("error: {}", err))
+                .map(|_| ())
+        })
     }
 }
