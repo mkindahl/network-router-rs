@@ -1,8 +1,10 @@
 ---
 protocol: udp
-source:
-  127.0.0.1:8080
-destination: !!seq
-  - 127.0.0.1:8081
-  - 127.0.0.1:8082
-...
+mode: broadcast
+sources: [ 127.0.0.1:8080 ]
+destinations: [ 127.0.0.1:8081, 127.0.0.1:8082 ]
+---
+protocol: tcp
+mode: round-robin
+sources: [ 127.0.0.1:8090 ]
+destinations: [ 127.0.0.1:8091, 127.0.0.1:8091 ]

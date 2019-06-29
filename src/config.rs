@@ -18,6 +18,7 @@
 //! ...
 //! ```
 
+use std::fs;
 use std::net::SocketAddr;
 use yaml_rust::{Yaml, YamlLoader};
 
@@ -87,6 +88,31 @@ impl std::convert::From<std::net::AddrParseError> for Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// Protocol
+#[derive(Debug)]
+pub enum Protocol {
+    Udp,
+    Tcp,
+}
+
+impl std::fmt::Display for Protocol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Protocol::Udp => write!(f, "UDP"),
+            Protocol::Tcp => write!(f, "TCP"),
+        }
+    }
+}
+
+/// A section in the configuration file.
+#[derive(Debug)]
+pub struct Section {
+    pub protocol: Protocol,
+    pub sources: Vec<SocketAddr>,
+    pub destinations: Vec<SocketAddr>,
+}
+
+/// Parse a YAML node into a socket address.
 fn parse_address(yaml: &Yaml) -> Result<SocketAddr> {
     match yaml {
         Yaml::String(addr) => Ok(addr.parse::<SocketAddr>()?),
@@ -112,6 +138,83 @@ fn make_protocol(
     }
 }
 
+impl Section {
+    pub fn from_yaml(prot: &Yaml, sources: &Yaml, destinations: &Yaml) -> Result<Section> {
+        let protocol = match prot {
+            Yaml::String(ref proto) if proto == "udp" => Protocol::Udp,
+            Yaml::String(ref proto) if proto == "tcp" => Protocol::Tcp,
+            Yaml::String(ref txt) => {
+                return Err(Error::ConfigError(format!(
+                    "'{}' is not a valid protocol",
+                    txt
+                )));
+            }
+            _ => {
+                return Err(Error::ConfigError(format!(
+                    "cannot be parsed as a protocol: {:?}",
+                    prot
+                )));
+            }
+        };
+
+        Ok(Section {
+            protocol: protocol,
+            sources: parse_address_list(sources)?,
+            destinations: parse_address_list(destinations)?,
+        })
+    }
+}
+
+/// Parse YAML item into a list of socket addresses.
+fn parse_address_list(yaml: &Yaml) -> Result<Vec<SocketAddr>> {
+    match yaml {
+        Yaml::Array(ref dests) => dests
+            .iter()
+            .map(|addr| parse_address(addr))
+            .collect::<Result<Vec<_>>>(),
+        _ => Err(Error::ConfigError(format!(
+            "Malformed configuration: {:?}",
+            yaml
+        ))),
+    }
+}
+
+impl Section {
+    pub fn from_yaml(prot: &Yaml, sources: &Yaml, destinations: &Yaml) -> Result<Section> {
+        let protocol = match prot {
+            Yaml::String(ref proto) if proto == "udp" => Protocol::Udp,
+            Yaml::String(ref proto) if proto == "tcp" => Protocol::Tcp,
+            Yaml::String(ref txt) => {
+                return Err(Error::ConfigError(format!(
+                    "'{}' is not a valid protocol",
+                    txt
+                )));
+            }
+            _ => {
+                return Err(Error::ConfigError(format!(
+                    "cannot be parsed as a protocol: {:?}",
+                    prot
+                )));
+            }
+        };
+
+        let section = Section {
+            protocol: protocol,
+            sources: parse_address_list(sources)?,
+            destinations: parse_address_list(destinations)?,
+        };
+
+        debug!("Found {} section: {:?}", section.protocol, section);
+
+        Ok(section)
+    }
+}
+
+/// Configuration with sections.
+pub struct Config {
+    pub sections: Vec<Section>,
+}
+
 impl Config {
     pub fn new() -> Config {
         Config {
@@ -123,12 +226,7 @@ impl Config {
         self.sections.push(protocol)
     }
 
-    pub fn load_from_file(filename: &str) -> Result<Config> {
-        let yaml = {
-            let config_text = std::fs::read_to_string(filename)?;
-            YamlLoader::load_from_str(&config_text)?
-        };
-
+    fn read_from_vec(yaml: Vec<Yaml>) -> Result<Config> {
         let mut config = Config::new();
         for part in yaml.iter() {
             let source = parse_address(&part["source"])?;
@@ -143,5 +241,15 @@ impl Config {
             config.add(make_protocol(&part["protocol"], source, peers)?);
         }
         Ok(config)
+    }
+
+    pub fn read_from_string(text: &str) -> Result<Config> {
+        Self::read_from_vec(YamlLoader::load_from_str(text)?)
+    }
+
+    /// Read a YAML configuration from a file name.
+    pub fn read_from_file(filename: &str) -> Result<Config> {
+        info!("Loading configuration from {}", filename);
+        Self::read_from_string(&fs::read_to_string(filename)?)
     }
 }
