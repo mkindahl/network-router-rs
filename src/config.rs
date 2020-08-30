@@ -42,15 +42,15 @@
 //!
 //! Here is a simple configuration that will listen on port 8080 and
 //! forward to ports 8081 and 8082.
-//! ```
+//! ```yaml
 //! ---
 //! protocol: udp
-//! source: !!seq
-//!   - 127.0.0.1:8080
-//! destination: !!seq
-//!   - 127.0.0.1:8081
-//!   - 127.0.0.1:8082
-//! ...
+//! source:
+//!   - "127.0.0.1:8080"
+//! destination:
+//!   - "127.0.0.1:8081"
+//!   - "127.0.0.1:8082"
+//!...
 //! ```
 
 use std::fs;

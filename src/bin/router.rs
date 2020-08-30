@@ -29,68 +29,71 @@ use tokio::net::{TcpListener, TcpStream, UdpFramed, UdpSocket};
 use tokio::prelude::*;
 
 // Spawn a new UDP session
-fn spawn_udp_session(source: SocketAddr, peers: Vec<SocketAddr>) {
+fn udp_session(
+    source: SocketAddr,
+    peers: Vec<SocketAddr>,
+) -> impl futures::Future<Item = (), Error = ()> {
     let socket = UdpSocket::bind(&source).expect("unable to bind UDP socket");
     let (mut writer, reader) = UdpFramed::new(socket, BytesCodec::new()).split();
-    tokio::spawn({
-        reader
-            .for_each(move |(bytes, _from): (BytesMut, SocketAddr)| {
-                let packet = bytes.freeze();
-                for peer in peers.iter() {
-                    writer.start_send((packet.clone(), peer.clone()))?;
-                }
-                writer.poll_complete()?;
-                Ok(())
-            })
-            .map_err(|err| error!("error: {}", err))
-            .map(|_| ())
-    });
+    reader
+        .for_each(move |(bytes, _from): (BytesMut, SocketAddr)| {
+            let packet = bytes.freeze();
+            for peer in peers.iter() {
+                writer.start_send((packet.clone(), peer.clone()))?;
+            }
+            writer.poll_complete()?;
+            Ok(())
+        })
+        .map_err(|err| error!("error: {}", err))
+        .map(|_| ())
 }
 
 /// Spawn a new TCP listener.
-fn spawn_tcp_listener(source: SocketAddr, destination: SocketAddr) {
+fn tcp_listener(
+    source: SocketAddr,
+    destination: SocketAddr,
+) -> impl futures::Future<Item = (), Error = ()> {
     let socket = TcpListener::bind(&source).expect("unable to bind TCP listener");
 
-    tokio::spawn({
-        socket
-            .incoming()
-            .for_each(move |client| {
-                spawn_tcp_session(client, destination.clone());
-                Ok(())
-            })
-            .map_err(|err| {
-                error!("error: {}", err);
-            })
-            .map(|_| ())
-    });
+    socket
+        .incoming()
+        .for_each(move |client| {
+            tokio::spawn(tcp_session(client, destination.clone()));
+            Ok(())
+        })
+        .map_err(|err| {
+            error!("error: {}", err);
+        })
+        .map(|_| ())
 }
 
 /// Spawn a new TCP session.
-fn spawn_tcp_session(client: TcpStream, destination: SocketAddr) {
-    tokio::spawn({
-        TcpStream::connect(&destination)
-            .and_then(|server| {
-                let (client_reader, client_writer) = client.split();
-                let (server_reader, server_writer) = server.split();
-                let client_to_server = tokio::io::copy(client_reader, server_writer)
-                    .and_then(|(_, _, mut server_writer)| {
-                        info!("Shutting down connection to server");
-                        server_writer.shutdown()
-                    })
-                    .map(|_| ());
-                let server_to_client = tokio::io::copy(server_reader, client_writer)
-                    .and_then(|(_, _, mut client_writer)| {
-                        info!("Shutting down connection to client");
-                        client_writer.shutdown()
-                    })
-                    .map(|_| ());
-                client_to_server.join(server_to_client)
-            })
-            .map(move |_| ())
-            .map_err(|err| {
-                error!("error: {}", err);
-            })
-    });
+fn tcp_session(
+    client: TcpStream,
+    destination: SocketAddr,
+) -> impl futures::Future<Item = (), Error = ()> {
+    TcpStream::connect(&destination)
+        .and_then(|server| {
+            let (client_reader, client_writer) = client.split();
+            let (server_reader, server_writer) = server.split();
+            let client_to_server = tokio::io::copy(client_reader, server_writer)
+                .and_then(|(_, _, mut server_writer)| {
+                    info!("Shutting down connection to server");
+                    server_writer.shutdown()
+                })
+                .map(|_| ());
+            let server_to_client = tokio::io::copy(server_reader, client_writer)
+                .and_then(|(_, _, mut client_writer)| {
+                    info!("Shutting down connection to client");
+                    client_writer.shutdown()
+                })
+                .map(|_| ());
+            client_to_server.join(server_to_client)
+        })
+        .map(move |_| ())
+        .map_err(|err| {
+            error!("error: {}", err);
+        })
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -104,13 +107,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             match section.protocol {
                 Protocol::Udp => {
                     for source in section.sources {
-                        spawn_udp_session(source.clone(), section.destinations.clone());
+                        tokio::spawn(udp_session(source.clone(), section.destinations.clone()));
                     }
                 }
 
                 Protocol::Tcp => {
                     for source in section.sources {
-                        spawn_tcp_listener(source.clone(), section.destinations[0].clone());
+                        tokio::spawn(tcp_listener(
+                            source.clone(),
+                            section.destinations[0].clone(),
+                        ));
                     }
                 }
             }
