@@ -1,10 +1,21 @@
-# Simpel Network Router in Rust
+# Simpel Connection or Packet Router in Rust
 
-This is a simple connection/port-based network router implemented in Rust using Tokio.
+This is a simple connection/port-based network router implemented in
+Rust using Tokio using async/await.
 
-Currently, it only implement simple UDP forwarding and listen on one
-port and forward any packets received there to one or more other
-addresses.
+For UDP it currently implement simple UDP packet forwarding. It
+can listen on one port and forward packets received to one or more
+other addresses.
+
+For TCP it currently implement simple round-robin selection of
+incoming connections. It listens on one port and for every connection
+request arriving, it will establish an outgoing connection to a list
+of other addresses in a round-robin fashion. Packets will then simply
+be forwarded when they arrive in both directions independently of each
+others.
+
+Routes right now have to be set up statically, but the intention is to
+implement a good API for dynamically setting up and changing routes.
 
 # How to build
 

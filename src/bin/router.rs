@@ -12,116 +12,62 @@
 // implied.  See the License for the specific language governing
 // permissions and limitations under the License.
 
-#[macro_use]
-extern crate log;
 extern crate bytes;
 extern crate env_logger;
 extern crate futures;
 extern crate router;
 extern crate yaml_rust;
 
-use bytes::BytesMut;
+use futures::stream::FuturesUnordered;
+use futures::StreamExt;
+use log::{debug, error, info};
 use router::config::{Config, Protocol};
+use router::strategy::{Mode, Strategy};
+use router::tcp::TcpSession;
+use router::udp::UdpSession;
 use std::env;
-use std::net::SocketAddr;
-use tokio::codec::BytesCodec;
-use tokio::net::{TcpListener, TcpStream, UdpFramed, UdpSocket};
-use tokio::prelude::*;
 
-// Spawn a new UDP session
-fn udp_session(
-    source: SocketAddr,
-    peers: Vec<SocketAddr>,
-) -> impl futures::Future<Item = (), Error = ()> {
-    let socket = UdpSocket::bind(&source).expect("unable to bind UDP socket");
-    let (mut writer, reader) = UdpFramed::new(socket, BytesCodec::new()).split();
-    reader
-        .for_each(move |(bytes, _from): (BytesMut, SocketAddr)| {
-            let packet = bytes.freeze();
-            for peer in peers.iter() {
-                writer.start_send((packet.clone(), peer.clone()))?;
-            }
-            writer.poll_complete()?;
-            Ok(())
-        })
-        .map_err(|err| error!("error: {}", err))
-        .map(|_| ())
-}
-
-/// Spawn a new TCP listener.
-fn tcp_listener(
-    source: SocketAddr,
-    destination: SocketAddr,
-) -> impl futures::Future<Item = (), Error = ()> {
-    let socket = TcpListener::bind(&source).expect("unable to bind TCP listener");
-
-    socket
-        .incoming()
-        .for_each(move |client| {
-            tokio::spawn(tcp_session(client, destination.clone()));
-            Ok(())
-        })
-        .map_err(|err| {
-            error!("error: {}", err);
-        })
-        .map(|_| ())
-}
-
-/// Spawn a new TCP session.
-fn tcp_session(
-    client: TcpStream,
-    destination: SocketAddr,
-) -> impl futures::Future<Item = (), Error = ()> {
-    TcpStream::connect(&destination)
-        .and_then(|server| {
-            let (client_reader, client_writer) = client.split();
-            let (server_reader, server_writer) = server.split();
-            let client_to_server = tokio::io::copy(client_reader, server_writer)
-                .and_then(|(_, _, mut server_writer)| {
-                    info!("Shutting down connection to server");
-                    server_writer.shutdown()
-                })
-                .map(|_| ());
-            let server_to_client = tokio::io::copy(server_reader, client_writer)
-                .and_then(|(_, _, mut client_writer)| {
-                    info!("Shutting down connection to client");
-                    client_writer.shutdown()
-                })
-                .map(|_| ());
-            client_to_server.join(server_to_client)
-        })
-        .map(move |_| ())
-        .map_err(|err| {
-            error!("error: {}", err);
-        })
-}
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() {
     env_logger::init();
 
-    let config_file = env::args().nth(1).unwrap_or("config.yaml".to_string());
-    let config = Config::read_from_file(&config_file)?;
+    let config_file = env::args()
+        .nth(1)
+        .unwrap_or_else(|| "config.yaml".to_string());
+    let config = Config::read_from_file(&config_file).expect("unable to read config file");
 
-    tokio::run(future::lazy(|| {
-        for section in config.sections {
-            match section.protocol {
-                Protocol::Udp => {
-                    for source in section.sources {
-                        tokio::spawn(udp_session(source.clone(), section.destinations.clone()));
-                    }
+    let mut sessions = FuturesUnordered::new();
+
+    for section in config.sections {
+        match section.protocol {
+            Protocol::Udp(mode) => {
+                let strategy = Strategy::new(mode, &section.destinations);
+                for source in section.sources {
+                    debug!("Spawning UDP session listening on {}", source);
+                    sessions.push(tokio::spawn({
+                        let strategy = strategy.clone();
+                        async move { UdpSession::new(source, strategy).run().await }
+                    }));
                 }
+            }
 
-                Protocol::Tcp => {
-                    for source in section.sources {
-                        tokio::spawn(tcp_listener(
-                            source.clone(),
-                            section.destinations[0].clone(),
-                        ));
-                    }
+            Protocol::Tcp => {
+                for source in section.sources {
+                    let strategy = Strategy::new(Mode::RoundRobin, &section.destinations);
+                    debug!("Spawning TCP session listening on {}", source);
+                    sessions.push(tokio::spawn({
+                        let strategy = strategy.clone();
+                        async move { TcpSession::new(source, strategy).run().await }
+                    }));
                 }
             }
         }
-        Ok(())
-    }));
-    Ok(())
+    }
+
+    while let Some(item) = sessions.next().await {
+        match item {
+            Ok(result) => info!("session exited {:?}", result),
+            Err(err) => error!("error: {}", err),
+        }
+    }
 }

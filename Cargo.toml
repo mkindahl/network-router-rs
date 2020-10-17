@@ -19,9 +19,10 @@ authors = ["Mats Kindahl <mats.kindahl@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-yaml-rust = "0.4.3"
-tokio = { git = "https://github.com/mkindahl/tokio.git", branch = "tcp-shutdown-fix" }
-log = "0.4.6"
-bytes = "0.4.7"
+yaml-rust = "~0.4"
+tokio = { version = "0.2.22", features = ["full"] }
+tokio-util = { version = "~0.2", features = ["full"] }
+log = "~0.4"
+bytes = "~0.4"
 env_logger = { version = "0.5", default-features = false }
-futures = "0.1.20"
+futures = "~0.3"

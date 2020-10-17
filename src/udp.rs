@@ -12,53 +12,59 @@
 // implied.  See the License for the specific language governing
 // permissions and limitations under the License.
 
-use bytes::BytesMut;
+use crate::strategy::Strategy;
+use log::debug;
+use std::error;
 use std::net::SocketAddr;
-use tokio::codec::BytesCodec;
-use tokio::net::{UdpFramed, UdpSocket};
-use tokio::prelude::*;
+use tokio::net::UdpSocket;
 
-struct UdpSession {
+pub struct UdpSession {
     source: SocketAddr,
-    peers: Vec<SocketAddr>,
+    strategy: Strategy,
 }
 
+/// An UDP session that will listen on one socket and send the packets
+/// to one or more other sockets.
 impl UdpSession {
-    fn new(source: &SocketAddr, destinations: &Vec<SocketAddr>) -> std::io::Result<UdpSession> {
-        let mut peers: Vec<SocketAddr> = Vec::new();
-        for dest in destinations {
-            peers.push(*dest);
-        }
-        let session = UdpSession {
-            source: source,
-            peers: peers,
-        };
-        Ok(session)
+    /// Create a new session
+    pub fn new(source: SocketAddr, strategy: Strategy) -> UdpSession {
+        UdpSession { source, strategy }
     }
-}
 
-impl future::IntoFuture for UdpSession {
-    type Future = future::Future<Item = Self::Item, Error = Self::Error>;
-    type Item = ();
-    type Error = ();
+    /// Run a session.
+    ///
+    /// This will take ownership of the session and run it until a
+    /// shutdown.
+    pub async fn run(self) -> Result<(), Box<dyn error::Error + Send>> {
+        let UdpSession {
+            source,
+            mut strategy,
+        } = self;
 
-    fn into_future(&self) {
-        let socket = UdpSocket::bind(&self.source)?;
-        let (mut writer, reader) = UdpFramed::new(socket, BytesCodec::new()).split();
-        let forward_packet = move |(bytes, _from): (BytesMut, SocketAddr)| {
-            let packet = bytes.freeze();
-            for peer in self.peers.iter() {
-                writer.start_send((packet.clone(), peer.clone()))?;
-            }
-            writer.poll_complete()?;
-            Ok(())
+        debug!("Starting UDP session");
+        let mut socket = match UdpSocket::bind(&source).await {
+            Ok(socket) => socket,
+            Err(err) => return Err(Box::new(err)),
         };
-
-        future::lazy(move || {
-            reader
-                .for_each(forward_packet)
-                .map_err(|err| error!("error: {}", err))
-                .map(|_| ())
-        })
+        debug!("Bound socket {}", source);
+        loop {
+            let mut buf = [0; 1500];
+            let bytes = match socket.recv(&mut buf).await {
+                Ok(bytes) => bytes,
+                Err(err) => return Err(Box::new(err)),
+            };
+            debug!("Receiving {} bytes", bytes);
+            if bytes == 0 {
+                break;
+            }
+            for addr in &strategy.destinations() {
+                debug!("Sending {} bytes to address {}", bytes, addr);
+                if let Err(err) = socket.send_to(&buf[0..bytes], &addr).await {
+                    return Err(Box::new(err));
+                }
+            }
+        }
+        debug!("Terminating UDP session");
+        Ok(())
     }
 }

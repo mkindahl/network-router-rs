@@ -12,7 +12,25 @@
 // implied.  See the License for the specific language governing
 // permissions and limitations under the License.
 
+#![feature(async_closure)]
+
 #[macro_use]
 extern crate log;
 
+#[macro_export]
+macro_rules! assert_matches {
+    ($string:expr, $pattern:expr) => {{
+        let re = Regex::new($pattern).unwrap();
+        if !re.is_match(&$string.to_string()) {
+            panic!(
+                "assertion failed: pattern '{}' do not match string '{}'",
+                $pattern, $string
+            )
+        }
+    }};
+}
+
 pub mod config;
+pub mod strategy;
+pub mod tcp;
+pub mod udp;

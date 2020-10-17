@@ -6,7 +6,7 @@
 //!
 //! # Sections
 //!
-//! Each secttion contain:
+//! Each section contains:
 //!
 //! - A protocol, which can be either "tcp" or "udp"
 //!
@@ -53,6 +53,7 @@
 //!...
 //! ```
 
+use crate::strategy::{self, Mode};
 use std::fs;
 use std::net::SocketAddr;
 use yaml_rust::{Yaml, YamlLoader};
@@ -62,6 +63,7 @@ pub enum Error {
     IoError(std::io::Error),
     YamlError(yaml_rust::scanner::ScanError),
     ConfigError(String),
+    SyntaxError(String),
 }
 
 impl std::fmt::Display for Error {
@@ -70,6 +72,7 @@ impl std::fmt::Display for Error {
             Error::IoError(err) => write!(f, "I/O error: {}", err),
             Error::YamlError(err) => write!(f, "YAML error: {}", err),
             Error::ConfigError(ref txt) => write!(f, "Config error: {}", txt),
+            Error::SyntaxError(ref txt) => write!(f, "Syntax error: {}", txt),
         }
     }
 }
@@ -80,6 +83,7 @@ impl std::error::Error for Error {
             Error::IoError(_) => "I/O error",
             Error::YamlError(_) => "YAML error",
             Error::ConfigError(_) => "config error",
+            Error::SyntaxError(_) => "syntax error",
         }
     }
 }
@@ -87,6 +91,12 @@ impl std::error::Error for Error {
 impl std::convert::From<std::io::Error> for Error {
     fn from(error: std::io::Error) -> Self {
         Error::IoError(error)
+    }
+}
+
+impl std::convert::From<strategy::Error> for Error {
+    fn from(err: strategy::Error) -> Self {
+        Error::SyntaxError(format!("{}", err))
     }
 }
 
@@ -105,19 +115,10 @@ impl std::convert::From<std::net::AddrParseError> for Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Protocol
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Protocol {
-    Udp,
+    Udp(Mode),
     Tcp,
-}
-
-impl std::fmt::Display for Protocol {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Protocol::Udp => write!(f, "UDP"),
-            Protocol::Tcp => write!(f, "TCP"),
-        }
-    }
 }
 
 /// A section in the configuration file.
@@ -154,9 +155,23 @@ fn parse_address_list(yaml: &Yaml) -> Result<Vec<SocketAddr>> {
 }
 
 impl Section {
-    pub fn from_yaml(prot: &Yaml, sources: &Yaml, destinations: &Yaml) -> Result<Section> {
-        let protocol = match prot {
-            Yaml::String(ref proto) if proto == "udp" => Protocol::Udp,
+    pub fn from_yaml(
+        protocol_field: &Yaml,
+        mode_field: &Yaml,
+        sources: &Yaml,
+        destinations: &Yaml,
+    ) -> Result<Section> {
+        let mode = match mode_field {
+            Yaml::String(ref text) => text.parse()?,
+            other => {
+                return Err(Error::ConfigError(format!(
+                    "cannot be parsed as a mode: {:?}",
+                    other
+                )));
+            }
+        };
+        let protocol = match protocol_field {
+            Yaml::String(ref proto) if proto == "udp" => Protocol::Udp(mode),
             Yaml::String(ref proto) if proto == "tcp" => Protocol::Tcp,
             Yaml::String(ref txt) => {
                 return Err(Error::ConfigError(format!(
@@ -164,21 +179,21 @@ impl Section {
                     txt
                 )));
             }
-            _ => {
+            other => {
                 return Err(Error::ConfigError(format!(
                     "cannot be parsed as a protocol: {:?}",
-                    prot
+                    other
                 )));
             }
         };
 
         let section = Section {
-            protocol: protocol,
+            protocol,
             sources: parse_address_list(sources)?,
             destinations: parse_address_list(destinations)?,
         };
 
-        debug!("Found {} section: {:?}", section.protocol, section);
+        debug!("Found {:?}", section);
 
         Ok(section)
     }
@@ -207,6 +222,7 @@ impl Config {
         for part in yaml.iter() {
             config.add(Section::from_yaml(
                 &part["protocol"],
+                &part["mode"],
                 &part["sources"],
                 &part["destinations"],
             )?);
@@ -222,5 +238,20 @@ impl Config {
     pub fn read_from_file(filename: &str) -> Result<Config> {
         info!("Loading configuration from {}", filename);
         Self::read_from_string(&fs::read_to_string(filename)?)
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Display for Protocol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Protocol::Udp(mode) => write!(f, "UDP mode: {}", mode),
+            Protocol::Tcp => write!(f, "TCP"),
+        }
     }
 }
