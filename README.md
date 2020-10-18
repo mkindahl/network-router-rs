@@ -31,7 +31,7 @@ cargo build
 * Start the router. 
 
   ```
-  target/debug/router config.yaml
+  target/debug/network-router config.yaml
   ```
 
 # Configuration file format

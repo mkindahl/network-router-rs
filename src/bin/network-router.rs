@@ -18,6 +18,7 @@ extern crate futures;
 extern crate router;
 extern crate yaml_rust;
 
+use clap::{App, Arg};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use log::{debug, error, info};
@@ -25,16 +26,49 @@ use router::config::{Config, Protocol};
 use router::strategy::{Mode, Strategy};
 use router::tcp::TcpSession;
 use router::udp::UdpSession;
-use std::env;
 
 #[tokio::main]
 async fn main() {
     env_logger::init();
 
-    let config_file = env::args()
-        .nth(1)
-        .unwrap_or_else(|| "config.yaml".to_string());
-    let config = Config::read_from_file(&config_file).expect("unable to read config file");
+    let matches = App::new("Network Router")
+        .version("0.1")
+        .author("Mats Kindahl <mats.kindahl@gmail.com>")
+        .about("Simple connection-based network router implemented in Rust using Tokio.")
+        .arg(
+            Arg::new("config_file")
+                .short('f')
+                .long("config-file")
+                .value_name("FILE")
+                .about("Read config from FILE")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::new("config_string")
+                .short('c')
+                .long("config")
+                .value_name("STRING")
+                .about("Read config from STRING")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::new("v")
+                .short('v')
+                .multiple(true)
+                .about("Sets the level of verbosity"),
+        )
+        .get_matches();
+
+    // Config string takes precedence, if given.
+    let config = match matches.value_of("config_string") {
+        Some(config_string) => {
+            Config::read_from_string(&config_string).expect("Unable to read config string")
+        }
+        None => {
+            let config_file = matches.value_of("config_file").unwrap_or("config.yaml");
+            Config::read_from_file(&config_file).expect("unable to read config file")
+        }
+    };
 
     let mut sessions = FuturesUnordered::new();
 
