@@ -34,8 +34,9 @@ impl TcpSession {
             Err(err) => return Err(Box::new(err)),
         };
 
+        info!("session started listening for connections");
         while let Ok((client, client_addr)) = listener.accept().await {
-            info!("Accepting connection from {}", client_addr);
+            info!("accepting connection from {}", client_addr);
             let destinations = strategy.destinations();
             assert!(destinations.len() == 1);
             let transfer = transfer(client, destinations[0]).map(|result| {
@@ -80,5 +81,6 @@ async fn transfer(
 
     future::try_join(client_to_server, server_to_client).await?;
 
+    info!("session terminated");
     Ok(())
 }

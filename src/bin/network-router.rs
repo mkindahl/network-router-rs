@@ -77,7 +77,7 @@ async fn main() {
             Protocol::Udp(mode) => {
                 let strategy = Strategy::new(mode, &section.destinations);
                 for source in section.sources {
-                    debug!("Spawning UDP session listening on {}", source);
+                    debug!("UDP session listening on {}", source);
                     sessions.push(tokio::spawn({
                         let strategy = strategy.clone();
                         async move { UdpSession::new(source, strategy).run().await }
@@ -88,7 +88,7 @@ async fn main() {
             Protocol::Tcp => {
                 for source in section.sources {
                     let strategy = Strategy::new(Mode::RoundRobin, &section.destinations);
-                    debug!("Spawning TCP session listening on {}", source);
+                    debug!("TCP session listening on {}", source);
                     sessions.push(tokio::spawn({
                         let strategy = strategy.clone();
                         async move { TcpSession::new(source, strategy).run().await }

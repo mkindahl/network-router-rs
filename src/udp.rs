@@ -41,12 +41,12 @@ impl UdpSession {
             mut strategy,
         } = self;
 
-        debug!("Starting UDP session");
         let mut socket = match UdpSocket::bind(&source).await {
             Ok(socket) => socket,
             Err(err) => return Err(Box::new(err)),
         };
-        debug!("Bound socket {}", source);
+
+        info!("session started listening on {}", source);
         loop {
             let mut buf = [0; 1500];
             let bytes = match socket.recv(&mut buf).await {
@@ -64,7 +64,7 @@ impl UdpSession {
                 }
             }
         }
-        debug!("Terminating UDP session");
+        info!("session terminated");
         Ok(())
     }
 }
