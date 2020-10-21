@@ -16,7 +16,7 @@ others.
 
 Routes right now have to be set up statically, but the intention is to
 implement a good API for dynamically setting up and changing routes.
-
+	
 # How to build
 
 ```
@@ -26,34 +26,40 @@ cargo build
 
 # How to run
 
-* Edit the `config.yaml` file.
+* Edit the `config.json` file.
 
 * Start the router. 
 
   ```
-  target/debug/network-router config.yaml
+  target/debug/network-router --config-file=config.json
   ```
+
+You can get a list of command-line options using `--help`.
 
 # Configuration file format
 
-The confuguration file is in YAML and is split into separate sections
-(documents in YAML terminology) with one section for each forwarding
-configuration:
+The configuration file is in JSON and is split into separate sections
+with one section for each forwarding configuration:
 
-```
----
-protocol: udp
-mode: broadcast
-sources: [ 127.0.0.1:8080 ]
-destinations: [ 127.0.0.1:8081, 127.0.0.1:8082 ]
+```json
+{
+    "sections": [
+	{
+	    "protocol":"Udp",
+	    "mode":"Broadcast",
+	    "sources": ["127.0.0.1:8080"],
+	    "destinations": ["127.0.0.1:8081"]
+	}
+    ]
+}
 ```
 
 Each section can contain four different attributes:
 
 - **protocol** is the protocol that the section should use. It can be
-  either `udp` or `tcp`.
-- **mode** can be either `broadcast` or `round-robin` and the default
-  is `broadcast` for UDP and `round-robin` for TCP.
+  either `Udp` or `Tcp` (it is case-sensitive).
+- **mode** can be either `Broadcast` or `RoundRobin` and the default
+  is `Broadcast` for UDP and `RoundRobin` for TCP.
   
   - In broadcast mode, each packet will be sent to all destinations,
     which only make sense for UDP.

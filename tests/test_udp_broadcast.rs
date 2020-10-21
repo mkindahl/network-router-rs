@@ -13,17 +13,15 @@ impl Drop for AutoKill {
     }
 }
 
-const CONFIG: &str = r#"
----
-protocol: udp
-mode: Broadcast
-sources:
-- 127.0.0.1:8080
-destinations:
-- 127.0.0.1:8081
-- 127.0.0.1:8082
-"#;
+const CONFIG: &str = r#"{
+"rules": [{
+  "protocol": "Udp",
+  "mode": "Broadcast",
+  "sources": ["127.0.0.1:8080"],
+  "destinations": ["127.0.0.1:8081", "127.0.0.1:8082"]}
+]}"#;
 
+/// Basic test of UDP broadcasting functionality.
 #[test]
 fn test_basic() -> Result<(), Box<dyn Error>> {
     let msgs = vec!["Just a test", "Another test"];
@@ -43,6 +41,10 @@ fn test_basic() -> Result<(), Box<dyn Error>> {
     let mut stderr = BufReader::new(child.0.stderr.take().unwrap());
     let mut buf = String::new();
     while let Ok(bytes) = stderr.read_line(&mut buf) {
+        if let Ok(Some(status)) = child.0.try_wait() {
+            panic!("Router exited with status {}", status);
+        }
+
         if bytes == 0 || buf.contains("session started") {
             break;
         }

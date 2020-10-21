@@ -16,16 +16,16 @@ extern crate bytes;
 extern crate env_logger;
 extern crate futures;
 extern crate router;
-extern crate yaml_rust;
 
 use clap::{App, Arg};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use log::{debug, error, info};
-use router::config::{Config, Protocol};
-use router::strategy::{Mode, Strategy};
+use router::config::{Config, Mode, Protocol};
+use router::strategy::Strategy;
 use router::tcp::TcpSession;
 use router::udp::UdpSession;
+use std::str::FromStr;
 
 #[tokio::main]
 async fn main() {
@@ -62,21 +62,21 @@ async fn main() {
     // Config string takes precedence, if given.
     let config = match matches.value_of("config_string") {
         Some(config_string) => {
-            Config::read_from_string(&config_string).expect("Unable to read config string")
+            Config::from_str(&config_string).expect("Unable to read config string")
         }
         None => {
             let config_file = matches.value_of("config_file").unwrap_or("config.yaml");
-            Config::read_from_file(&config_file).expect("unable to read config file")
+            Config::from_file(&config_file).expect("unable to read config file")
         }
     };
 
     let mut sessions = FuturesUnordered::new();
 
-    for section in config.sections {
-        match section.protocol {
-            Protocol::Udp(mode) => {
-                let strategy = Strategy::new(mode, &section.destinations);
-                for source in section.sources {
+    for rule in config.rules {
+        match rule.protocol {
+            Protocol::Udp => {
+                let strategy = Strategy::new(rule.mode, &rule.destinations);
+                for source in rule.sources {
                     debug!("UDP session listening on {}", source);
                     sessions.push(tokio::spawn({
                         let strategy = strategy.clone();
@@ -86,8 +86,8 @@ async fn main() {
             }
 
             Protocol::Tcp => {
-                for source in section.sources {
-                    let strategy = Strategy::new(Mode::RoundRobin, &section.destinations);
+                for source in rule.sources {
+                    let strategy = Strategy::new(Mode::RoundRobin, &rule.destinations);
                     debug!("TCP session listening on {}", source);
                     sessions.push(tokio::spawn({
                         let strategy = strategy.clone();

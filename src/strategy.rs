@@ -1,11 +1,6 @@
+use crate::config::Mode;
 use std::net::SocketAddr;
 use std::str::FromStr;
-
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum Mode {
-    RoundRobin,
-    Broadcast,
-}
 
 #[derive(Clone)]
 pub struct Strategy {
