@@ -12,7 +12,7 @@ use tokio::net::{TcpListener, TcpStream};
 
 pub struct TcpSession {
     source: SocketAddr,
-    strategy: Strategy,
+    strategy: Box<dyn Strategy + Send>,
 }
 
 /// A TCP session.
@@ -20,7 +20,7 @@ pub struct TcpSession {
 /// The TCP session will listen for connections on the provided port
 /// and send to the provided destination.
 impl TcpSession {
-    pub fn new(source: SocketAddr, strategy: Strategy) -> TcpSession {
+    pub fn new(source: SocketAddr, strategy: Box<dyn Strategy + Send>) -> TcpSession {
         TcpSession { source, strategy }
     }
 

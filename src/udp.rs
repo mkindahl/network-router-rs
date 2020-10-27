@@ -20,14 +20,14 @@ use tokio::net::UdpSocket;
 
 pub struct UdpSession {
     source: SocketAddr,
-    strategy: Strategy,
+    strategy: Box<dyn Strategy + Send>,
 }
 
 /// An UDP session that will listen on one socket and send the packets
 /// to one or more other sockets.
 impl UdpSession {
     /// Create a new session
-    pub fn new(source: SocketAddr, strategy: Strategy) -> UdpSession {
+    pub fn new(source: SocketAddr, strategy: Box<dyn Strategy + Send>) -> UdpSession {
         UdpSession { source, strategy }
     }
 
