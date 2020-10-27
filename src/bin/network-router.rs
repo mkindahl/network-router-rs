@@ -21,8 +21,8 @@ use clap::{App, Arg};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use log::{debug, error, info};
-use router::config::{Config, Mode, Protocol};
-use router::strategy::Strategy;
+use router::config::{Config, Protocol};
+use router::strategy::*;
 use router::tcp::TcpSession;
 use router::udp::UdpSession;
 use std::str::FromStr;
@@ -75,11 +75,10 @@ async fn main() {
     for rule in config.rules {
         match rule.protocol {
             Protocol::Udp => {
-                let strategy = Strategy::new(rule.mode, &rule.destinations);
                 for source in rule.sources {
                     debug!("UDP session listening on {}", source);
                     sessions.push(tokio::spawn({
-                        let strategy = strategy.clone();
+                        let strategy = StrategyFactory::make(rule.mode, &rule.destinations);
                         async move { UdpSession::new(source, strategy).run().await }
                     }));
                 }
@@ -87,10 +86,9 @@ async fn main() {
 
             Protocol::Tcp => {
                 for source in rule.sources {
-                    let strategy = Strategy::new(Mode::RoundRobin, &rule.destinations);
                     debug!("TCP session listening on {}", source);
                     sessions.push(tokio::spawn({
-                        let strategy = strategy.clone();
+                        let strategy = StrategyFactory::make(rule.mode, &rule.destinations);
                         async move { TcpSession::new(source, strategy).run().await }
                     }));
                 }

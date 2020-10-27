@@ -2,11 +2,8 @@ use crate::config::Mode;
 use std::net::SocketAddr;
 use std::str::FromStr;
 
-#[derive(Clone)]
-pub struct Strategy {
-    mode: Mode,
-    next: usize,
-    peers: Vec<SocketAddr>,
+pub trait Strategy {
+    fn destinations(&mut self) -> Vec<SocketAddr>;
 }
 
 #[derive(Debug, PartialEq)]
@@ -14,28 +11,67 @@ pub enum Error {
     ParseModeError(String),
 }
 
-impl Strategy {
-    pub fn new(mode: Mode, peers: &[SocketAddr]) -> Strategy {
-        debug!("strategy {} with peers {:?}", mode, peers);
-        Strategy {
-            mode,
+pub struct StrategyFactory;
+
+impl StrategyFactory {
+    /// Create a boxed strategy based on a mode and a vector of
+    /// destinations.
+    pub fn make(mode: Mode, destinations: &[SocketAddr]) -> Box<dyn Strategy + Send> {
+        match mode {
+            Mode::Broadcast => Box::new(BroadcastStrategy::new(destinations)),
+            Mode::RoundRobin => Box::new(RoundRobinStrategy::new(destinations)),
+        }
+    }
+}
+
+/// Strategy for broadcasting packets to all destinations. Only makes
+/// sense for UDP.
+#[derive(Clone)]
+pub struct BroadcastStrategy {
+    peers: Vec<SocketAddr>,
+}
+
+/// Strategy for sending packets or connections to destinations
+/// one-by-one.
+#[derive(Clone)]
+pub struct RoundRobinStrategy {
+    next: usize,
+    peers: Vec<SocketAddr>,
+}
+
+impl BroadcastStrategy {
+    pub fn new(peers: &[SocketAddr]) -> BroadcastStrategy {
+        debug!("Broadcast strategy with peers {:?}", peers);
+        BroadcastStrategy {
+            peers: peers.to_owned(),
+        }
+    }
+}
+
+impl RoundRobinStrategy {
+    pub fn new(peers: &[SocketAddr]) -> RoundRobinStrategy {
+        debug!("RoundRobin strategy with peers {:?}", peers);
+        RoundRobinStrategy {
             next: 0,
             peers: peers.to_owned(),
         }
     }
+}
 
-    pub fn destinations(&mut self) -> Vec<SocketAddr> {
-        match self.mode {
-            Mode::Broadcast => self.peers.clone(),
-            Mode::RoundRobin => {
-                let result = vec![self.peers[self.next]];
-                self.next += 1;
-                if self.next >= self.peers.len() {
-                    self.next = 0;
-                }
-                result
-            }
+impl Strategy for BroadcastStrategy {
+    fn destinations(&mut self) -> Vec<SocketAddr> {
+        self.peers.clone()
+    }
+}
+
+impl Strategy for RoundRobinStrategy {
+    fn destinations(&mut self) -> Vec<SocketAddr> {
+        let result = vec![self.peers[self.next]];
+        self.next += 1;
+        if self.next >= self.peers.len() {
+            self.next = 0;
         }
+        result
     }
 }
 
