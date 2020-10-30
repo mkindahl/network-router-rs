@@ -9,21 +9,49 @@ use std::net::UdpSocket;
 use std::process::{Child, Command, Stdio};
 use std::str::from_utf8;
 
+/// A test harness that can be used to test the router. It allow a
+/// test to start the router with a single rule and attach sockets to
+/// the source and destination.
+///
+/// # Example
+///
+/// ```
+/// const CONFIG: &str = r#"{
+///   "protocol": "Udp",
+///   "mode": "Broadcast",
+///   "sources": ["127.0.0.1:8080"],
+///   "destinations": ["127.0.0.1:8081", "127.0.0.1:8082"]
+/// }"#;
+///
+/// #[test]
+/// fn test_basic() -> Result<(), Box<dyn Error>> {
+///   let rule = config::Rule::from_json(CONFIG)?;
+///   let mut harness = Harness::new(rule)?;
+///   harness.start()?;
+///   harness.test_send_str("Just a test")?;
+///   Ok(())
+/// }
+/// ```
 pub struct Harness {
     runtime: Option<Runtime>,
     rule: Rule,
 }
 
+/// Test runtime.
 struct Runtime {
     child: Child,
     sender: UdpSocket,
     receivers: Vec<UdpSocket>,
 }
 
+/// Test harness error.
 #[derive(Debug)]
 pub struct Error(String);
 
 impl Harness {
+    /// Create a new harness with a single rule.
+    ///
+    ///
     pub(crate) fn new(rule: Rule) -> Harness {
         Harness {
             rule,

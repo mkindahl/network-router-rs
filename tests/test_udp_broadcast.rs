@@ -1,17 +1,8 @@
+mod common;
+
 use crate::common::Harness;
 use router::config;
 use std::error::Error;
-use std::process::Child;
-
-mod common;
-
-struct AutoKill(Child);
-
-impl Drop for AutoKill {
-    fn drop(&mut self) {
-        self.0.kill().expect("Could not kill child process");
-    }
-}
 
 const CONFIG: &str = r#"{
   "protocol": "Udp",
