@@ -22,9 +22,9 @@ use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use log::{debug, error, info};
 use router::config::{Config, Protocol};
+use router::protocol::tcp::TcpSession;
+use router::protocol::udp::UdpSession;
 use router::strategy::*;
-use router::tcp::TcpSession;
-use router::udp::UdpSession;
 use std::str::FromStr;
 
 #[tokio::main]
