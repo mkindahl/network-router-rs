@@ -12,10 +12,14 @@
 // implied.  See the License for the specific language governing
 // permissions and limitations under the License.
 
+use crate::storage::Database;
+use crate::storage::Rule;
 use crate::strategy::Strategy;
+use futures::lock::Mutex;
 use log::debug;
 use std::error;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::net::UdpSocket;
 
 pub struct UdpSession {
@@ -26,16 +30,21 @@ pub struct UdpSession {
 /// An UDP session that will listen on one socket and send the packets
 /// to one or more other sockets.
 impl UdpSession {
-    /// Create a new session
-    pub fn new(source: SocketAddr, strategy: Box<dyn Strategy + Send>) -> UdpSession {
+    pub async fn new(
+        database: Arc<Mutex<Database>>,
+        rule: Rule,
+        strategy: Box<dyn Strategy + Send>,
+    ) -> UdpSession {
+        let source = rule.source;
+        database.lock().await.add_rule(rule);
         UdpSession { source, strategy }
     }
 
-    /// Run a session.
+    /// Start the session.
     ///
     /// This will take ownership of the session and run it until a
     /// shutdown.
-    pub async fn run(self) -> Result<(), Box<dyn error::Error + Send>> {
+    pub async fn start(self) -> Result<(), Box<dyn error::Error + Send>> {
         let UdpSession {
             source,
             mut strategy,

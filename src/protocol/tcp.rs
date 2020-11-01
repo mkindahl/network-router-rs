@@ -3,10 +3,14 @@
 //! A lot of the code is copied from the `proxy.rs` example in the
 //! Tokio examples directory.
 
+use crate::storage::Database;
+use crate::storage::Rule;
 use crate::strategy::Strategy;
+use futures::lock::Mutex;
 use futures::{future, FutureExt};
 use std::error;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::io::{self, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -20,11 +24,17 @@ pub struct TcpSession {
 /// The TCP session will listen for connections on the provided port
 /// and send to the provided destination.
 impl TcpSession {
-    pub fn new(source: SocketAddr, strategy: Box<dyn Strategy + Send>) -> TcpSession {
+    pub async fn new(
+        database: Arc<Mutex<Database>>,
+        rule: Rule,
+        strategy: Box<dyn Strategy + Send>,
+    ) -> TcpSession {
+        let source = rule.source;
+        database.lock().await.add_rule(rule);
         TcpSession { source, strategy }
     }
 
-    pub async fn run(self) -> Result<(), Box<dyn error::Error + Send>> {
+    pub async fn start(self) -> Result<(), Box<dyn error::Error + Send>> {
         let TcpSession {
             source,
             mut strategy,

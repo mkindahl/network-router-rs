@@ -18,14 +18,17 @@ extern crate futures;
 extern crate router;
 
 use clap::{App, Arg};
-use futures::stream::FuturesUnordered;
-use futures::StreamExt;
+use futures::lock::Mutex;
+use futures::{stream::FuturesUnordered, StreamExt};
 use log::{debug, error, info};
-use router::config::{Config, Protocol};
-use router::protocol::tcp::TcpSession;
-use router::protocol::udp::UdpSession;
-use router::strategy::*;
+use router::{
+    config::Config,
+    protocol::{tcp::TcpSession, udp::UdpSession},
+    storage::{Database, Protocol},
+    strategy::*,
+};
 use std::str::FromStr;
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() {
@@ -34,7 +37,7 @@ async fn main() {
     let matches = App::new("Network Router")
         .version("0.1")
         .author("Mats Kindahl <mats.kindahl@gmail.com>")
-        .about("Simple connection-based network router implemented in Rust using Tokio.")
+        .about("Simple port-based network router implemented in Rust using Tokio.")
         .arg(
             Arg::new("config_file")
                 .short('f')
@@ -72,26 +75,26 @@ async fn main() {
 
     let mut sessions = FuturesUnordered::new();
 
+    let database = Arc::new(Mutex::new(Database::new()));
+
     for rule in config.rules {
         match rule.protocol {
             Protocol::Udp => {
-                for source in rule.sources {
-                    debug!("UDP session listening on {}", source);
-                    sessions.push(tokio::spawn({
-                        let strategy = StrategyFactory::make(rule.mode, &rule.destinations);
-                        async move { UdpSession::new(source, strategy).run().await }
-                    }));
-                }
+                debug!("UDP session listening on {}", rule.source);
+                sessions.push(tokio::spawn({
+                    let strategy = StrategyFactory::make(rule.mode, &rule.destinations);
+                    let database = database.clone();
+                    UdpSession::new(database, rule, strategy).await.start()
+                }));
             }
 
             Protocol::Tcp => {
-                for source in rule.sources {
-                    debug!("TCP session listening on {}", source);
-                    sessions.push(tokio::spawn({
-                        let strategy = StrategyFactory::make(rule.mode, &rule.destinations);
-                        async move { TcpSession::new(source, strategy).run().await }
-                    }));
-                }
+                debug!("TCP session listening on {}", rule.source);
+                sessions.push(tokio::spawn({
+                    let strategy = StrategyFactory::make(rule.mode, &rule.destinations);
+                    let database = database.clone();
+                    TcpSession::new(database, rule, strategy).await.start()
+                }));
             }
         }
     }

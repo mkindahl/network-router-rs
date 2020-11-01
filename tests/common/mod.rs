@@ -1,7 +1,8 @@
 extern crate router;
 
 use log::debug;
-use router::config::{self, Config, Mode, Rule};
+use router::config::{self, Config};
+use router::storage::{Mode, Rule};
 use std::error;
 use std::fmt::{self, Display};
 use std::io::{self, BufRead, BufReader};
@@ -19,7 +20,7 @@ use std::str::from_utf8;
 /// const CONFIG: &str = r#"{
 ///   "protocol": "Udp",
 ///   "mode": "Broadcast",
-///   "sources": ["127.0.0.1:8080"],
+///   "source": "127.0.0.1:8080",
 ///   "destinations": ["127.0.0.1:8081", "127.0.0.1:8082"]
 /// }"#;
 ///
@@ -98,13 +99,13 @@ impl Harness {
         match self.runtime {
             Some(ref runtime) => match self.rule.mode {
                 Mode::Broadcast => {
-                    for source in &self.rule.sources {
-                        runtime.sender.send_to(packet.as_bytes(), source)?;
-                        for receiver in &runtime.receivers {
-                            let mut buf = [0; 1500];
-                            let bytes = receiver.recv(&mut buf)?;
-                            assert_eq!(Ok(packet), from_utf8(&buf[0..bytes]));
-                        }
+                    runtime
+                        .sender
+                        .send_to(packet.as_bytes(), self.rule.source)?;
+                    for receiver in &runtime.receivers {
+                        let mut buf = [0; 1500];
+                        let bytes = receiver.recv(&mut buf)?;
+                        assert_eq!(Ok(packet), from_utf8(&buf[0..bytes]));
                     }
                     Ok(())
                 }

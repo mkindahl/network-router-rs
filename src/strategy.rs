@@ -1,4 +1,4 @@
-use crate::config::Mode;
+use crate::storage::Mode;
 use std::net::SocketAddr;
 use std::str::FromStr;
 
