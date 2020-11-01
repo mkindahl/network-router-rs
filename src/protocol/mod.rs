@@ -1,4 +1,4 @@
-// Copyright 2019 Mats Kindahl
+// Copyright 2020 Mats Kindahl
 //
 // Licensed under the Apache License, Version 2.0 (the "License"); you
 // may not use this file except in compliance with the License.  You
@@ -12,22 +12,5 @@
 // implied.  See the License for the specific language governing
 // permissions and limitations under the License.
 
-#[macro_use]
-extern crate log;
-
-#[macro_export]
-macro_rules! assert_matches {
-    ($string:expr, $pattern:expr) => {{
-        let re = Regex::new($pattern).unwrap();
-        if !re.is_match(&$string.to_string()) {
-            panic!(
-                "assertion failed: pattern '{}' do not match string '{}'",
-                $pattern, $string
-            )
-        }
-    }};
-}
-
-pub mod config;
-pub mod protocol;
-pub mod strategy;
+pub mod tcp;
+pub mod udp;
