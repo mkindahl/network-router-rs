@@ -18,13 +18,8 @@ extern crate futures;
 extern crate router;
 
 use clap::{App, Arg};
-use futures::stream::FuturesUnordered;
-use futures::StreamExt;
-use log::{debug, error, info};
-use router::config::{Config, Protocol};
-use router::protocol::tcp::TcpSession;
-use router::protocol::udp::UdpSession;
-use router::strategy::*;
+use log::debug;
+use router::{config::Config, session::Manager};
 use std::str::FromStr;
 
 #[tokio::main]
@@ -34,28 +29,28 @@ async fn main() {
     let matches = App::new("Network Router")
         .version("0.1")
         .author("Mats Kindahl <mats.kindahl@gmail.com>")
-        .about("Simple connection-based network router implemented in Rust using Tokio.")
+        .help("Simple port-based network router implemented in Rust using Tokio.")
         .arg(
-            Arg::new("config_file")
-                .short('f')
+            Arg::with_name("config_file")
+                .short("f")
                 .long("config-file")
                 .value_name("FILE")
-                .about("Read config from FILE")
+                .help("Read config from FILE")
                 .takes_value(true),
         )
         .arg(
-            Arg::new("config_string")
-                .short('c')
+            Arg::with_name("config_string")
+                .short("c")
                 .long("config")
                 .value_name("STRING")
-                .about("Read config from STRING")
+                .help("Read config from STRING")
                 .takes_value(true),
         )
         .arg(
-            Arg::new("v")
-                .short('v')
+            Arg::with_name("verbosity")
+                .short("v")
                 .multiple(true)
-                .about("Sets the level of verbosity"),
+                .help("Sets the level of verbosity"),
         )
         .get_matches();
 
@@ -66,40 +61,15 @@ async fn main() {
         }
         None => {
             let config_file = matches.value_of("config_file").unwrap_or("config.yaml");
+            debug!("Reading from file '{}'", config_file);
             Config::from_file(&config_file).expect("unable to read config file")
         }
     };
 
-    let mut sessions = FuturesUnordered::new();
-
+    let mut manager = Manager::new();
     for rule in config.rules {
-        match rule.protocol {
-            Protocol::Udp => {
-                for source in rule.sources {
-                    debug!("UDP session listening on {}", source);
-                    sessions.push(tokio::spawn({
-                        let strategy = StrategyFactory::make(rule.mode, &rule.destinations);
-                        async move { UdpSession::new(source, strategy).run().await }
-                    }));
-                }
-            }
-
-            Protocol::Tcp => {
-                for source in rule.sources {
-                    debug!("TCP session listening on {}", source);
-                    sessions.push(tokio::spawn({
-                        let strategy = StrategyFactory::make(rule.mode, &rule.destinations);
-                        async move { TcpSession::new(source, strategy).run().await }
-                    }));
-                }
-            }
-        }
+        manager.add_rule(rule).await;
     }
 
-    while let Some(item) = sessions.next().await {
-        match item {
-            Ok(result) => info!("session exited {:?}", result),
-            Err(err) => error!("error: {}", err),
-        }
-    }
+    manager.start().await
 }

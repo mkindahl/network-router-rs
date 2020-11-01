@@ -1,23 +1,22 @@
 {
-    "sections": [
+    "rules": [
 	{
-	    "protocol":"Udp",
-	    "mode":"Broadcast",
-	    "sources": ["127.0.0.1:8080"],
+	    "protocol":"udp",
+	    "mode":"broadcast",
+	    "source": "127.0.0.1:8080",
 	    "destinations": [
 		"127.0.0.1:8081",
 		"127.0.0.1:8082"
 	    ]
 	},
 	{
-	    "protocol":"Tcp",
-	    "mode":"RoundRobin",
-	    "sources": ["127.0.0.1:8090"],
+	    "protocol":"tcp",
+	    "mode":"round-robin",
+	    "source": "127.0.0.1:8090",
 	    "destinations": [
 		"127.0.0.1:8081",
 		"127.0.0.1:8082"
 	    ]
-	},
-	
+	}
     ]
 }

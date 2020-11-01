@@ -30,4 +30,4 @@ macro_rules! assert_matches {
 
 pub mod config;
 pub mod protocol;
-pub mod strategy;
+pub mod session;

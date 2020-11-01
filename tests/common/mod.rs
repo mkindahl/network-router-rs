@@ -1,37 +1,78 @@
 extern crate router;
 
+use bytes::Buf;
+use http::uri::{Authority, InvalidUri, Scheme};
+use hyper::{header, Body, Client, Method, Request, Uri};
 use log::debug;
-use router::config::{self, Config, Mode, Rule};
-use std::error;
-use std::fmt::{self, Display};
-use std::io::{self, BufRead, BufReader};
-use std::net::UdpSocket;
-use std::process::{Child, Command, Stdio};
-use std::str::from_utf8;
+use router::{
+    config::{self, Config, Web},
+    session::{Mode, Rule},
+};
+use std::{
+    env, error,
+    fmt::{self, Display},
+    io::{self, BufRead, BufReader},
+    net::UdpSocket,
+    process::{Child, Command, Stdio},
+    str::from_utf8,
+};
+use tokio::runtime::Runtime;
 
+/// A test harness that can be used to test the router. It allow a
+/// test to start the router with a single rule and attach sockets to
+/// the source and destination.
+///
+/// # Example
+///
+/// ```
+/// const CONFIG: &str = r#"{
+///   "protocol": "Udp",
+///   "mode": "Broadcast",
+///   "source": "127.0.0.1:8080",
+///   "destinations": ["127.0.0.1:8081", "127.0.0.1:8082"]
+/// }"#;
+///
+/// #[test]
+/// fn test_basic() -> Result<(), Box<dyn Error>> {
+///   let rule = config::Rule::from_json(CONFIG)?;
+///   let mut harness = Harness::new(rule)?;
+///   harness.start()?;
+///   harness.test_send_str("Just a test")?;
+///   Ok(())
+/// }
+/// ```
 pub struct Harness {
+    state: Option<State>,
     runtime: Option<Runtime>,
+    dispatcher: Dispatcher,
     rule: Rule,
 }
 
-struct Runtime {
-    child: Child,
-    sender: UdpSocket,
-    receivers: Vec<UdpSocket>,
+struct Dispatcher {
+    endpoint: Web,
 }
 
-#[derive(Debug)]
-pub struct Error(String);
+/// Test runtime.
+struct State {
+    child: Child,
+    _sender: UdpSocket,
+    _receivers: Vec<UdpSocket>,
+}
 
 impl Harness {
-    pub(crate) fn new(rule: Rule) -> Harness {
+    /// Create a new harness with a single rule and a web endpoint.
+    pub fn new(rule: Rule, port: u16) -> Harness {
         Harness {
             rule,
+            dispatcher: Dispatcher {
+                endpoint: Web::Port(Some(port)),
+            },
             runtime: None,
+            state: None,
         }
     }
 
-    pub(crate) fn start(&mut self) -> Result<(), Error> {
+    pub fn start(&mut self) -> Result<(), Error> {
         // Set up listeners on destinations.
         let receivers: Result<Vec<_>, _> =
             self.rule.destinations.iter().map(UdpSocket::bind).collect();
@@ -41,42 +82,48 @@ impl Harness {
             Err(err) => return Err(Error(format!("Error: {}", err))),
         };
 
-        // Open a sender socket
-        let sender = UdpSocket::bind("0.0.0.0:0")?;
         let config = Config {
+            web: Some(self.dispatcher.endpoint),
             rules: vec![self.rule.clone()],
         };
-        // Spawn the router if all above worked out fine.
+
+        // Spawn the router to use a random port.
         let config_str = format!(r#"--config={}"#, config.to_json()?);
-        println!("Config: {}", config_str);
         let child = wait_until_started(
             Command::new(env!("CARGO_BIN_EXE_network-router"))
                 .arg(config_str)
                 .stderr(Stdio::piped())
-                .env("RUST_LOG", "info")
+                .env(
+                    "RUST_LOG",
+                    env::var("RUST_LOG").unwrap_or("info".to_string()),
+                )
                 .spawn()
                 .expect("unable to start network router"),
         )?;
 
-        self.runtime = Some(Runtime {
+        // Open a sender socket
+        let sender = UdpSocket::bind("0.0.0.0:0")?;
+
+        self.runtime = Some(Runtime::new()?);
+        self.state = Some(State {
             child,
-            sender,
-            receivers,
+            _sender: sender,
+            _receivers: receivers,
         });
         Ok(())
     }
 
-    pub(crate) fn test_send_str(&mut self, packet: &str) -> Result<(), Error> {
-        match self.runtime {
-            Some(ref runtime) => match self.rule.mode {
+    /// Send a string as a packet to the UDP port.
+    #[cfg(test)]
+    pub fn test_send_str(&mut self, packet: &str) -> Result<(), Error> {
+        match self.state {
+            Some(ref state) => match self.rule.mode {
                 Mode::Broadcast => {
-                    for source in &self.rule.sources {
-                        runtime.sender.send_to(packet.as_bytes(), source)?;
-                        for receiver in &runtime.receivers {
-                            let mut buf = [0; 1500];
-                            let bytes = receiver.recv(&mut buf)?;
-                            assert_eq!(Ok(packet), from_utf8(&buf[0..bytes]));
-                        }
+                    state._sender.send_to(packet.as_bytes(), self.rule.source)?;
+                    for receiver in &state._receivers {
+                        let mut buf = [0; 1500];
+                        let bytes = receiver.recv(&mut buf)?;
+                        assert_eq!(Ok(packet), from_utf8(&buf[0..bytes]));
                     }
                     Ok(())
                 }
@@ -87,11 +134,68 @@ impl Harness {
             None => Err(Error(format!("not started"))),
         }
     }
+
+    #[cfg(test)]
+    pub fn send_request(
+        &mut self,
+        method: Method,
+        resource: &str,
+        body: Body,
+    ) -> Result<impl Buf, Error> {
+        let result = self.dispatcher.dispatch(method, resource, body);
+        self.runtime.as_mut().unwrap().block_on(result)
+    }
+}
+
+impl Dispatcher {
+    #[cfg(test)]
+    async fn dispatch(
+        &self,
+        method: Method,
+        resource: &str,
+        body: Body,
+    ) -> Result<impl Buf, Error> {
+        let scheme: Scheme = "http".parse()?;
+        let authority: Authority = self.endpoint.to_string().parse()?;
+        let req = Request::builder()
+            .method(method)
+            .uri(
+                Uri::builder()
+                    .scheme(scheme)
+                    .authority(authority)
+                    .path_and_query(resource)
+                    .build()?,
+            )
+            .header(header::ACCEPT, "application/json")
+            .body(body)?;
+        let client = Client::new();
+        let resp = client.request(req).await?;
+        let body = hyper::body::aggregate(resp).await?;
+        Ok(body)
+    }
 }
 
 impl From<config::Error> for Error {
     fn from(err: config::Error) -> Self {
         Error(format!("{}", err))
+    }
+}
+
+impl From<serde_json::Error> for Error {
+    fn from(err: serde_json::Error) -> Self {
+        Error(format!("{}", err))
+    }
+}
+
+impl From<hyper::Error> for Error {
+    fn from(err: hyper::Error) -> Self {
+        Error(format!("{}", err))
+    }
+}
+
+impl From<http::Error> for Error {
+    fn from(err: http::Error) -> Self {
+        Error(format!("HTTP Error: {}", err))
     }
 }
 
@@ -101,11 +205,21 @@ impl From<io::Error> for Error {
     }
 }
 
+impl From<InvalidUri> for Error {
+    fn from(_err: InvalidUri) -> Self {
+        Error("invalid URI".to_string())
+    }
+}
+
+/// Test harness error.
+#[derive(Debug, PartialEq)]
+pub struct Error(String);
+
 impl error::Error for Error {}
 
 impl Drop for Harness {
     fn drop(&mut self) {
-        if let Some(mut rt) = self.runtime.take() {
+        if let Some(mut rt) = self.state.take() {
             if let Err(err) = rt.child.kill() {
                 panic!("Cannot kill child: {}", err);
             }

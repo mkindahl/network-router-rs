@@ -12,9 +12,11 @@
 // implied.  See the License for the specific language governing
 // permissions and limitations under the License.
 
-use crate::strategy::Strategy;
+use crate::{
+    protocol::Result,
+    session::{strategy::Strategy, Rule},
+};
 use log::debug;
-use std::error;
 use std::net::SocketAddr;
 use tokio::net::UdpSocket;
 
@@ -26,42 +28,36 @@ pub struct UdpSession {
 /// An UDP session that will listen on one socket and send the packets
 /// to one or more other sockets.
 impl UdpSession {
-    /// Create a new session
-    pub fn new(source: SocketAddr, strategy: Box<dyn Strategy + Send>) -> UdpSession {
-        UdpSession { source, strategy }
+    pub async fn new(rule: &Rule, strategy: Box<dyn Strategy + Send>) -> UdpSession {
+        UdpSession {
+            source: rule.source,
+            strategy,
+        }
     }
 
-    /// Run a session.
+    /// Start the session.
     ///
     /// This will take ownership of the session and run it until a
     /// shutdown.
-    pub async fn run(self) -> Result<(), Box<dyn error::Error + Send>> {
+    pub async fn start(self) -> Result<()> {
         let UdpSession {
             source,
             mut strategy,
         } = self;
 
-        let mut socket = match UdpSocket::bind(&source).await {
-            Ok(socket) => socket,
-            Err(err) => return Err(Box::new(err)),
-        };
+        let socket = UdpSocket::bind(&source).await?;
 
         info!("session started listening on {}", source);
         loop {
             let mut buf = [0; 1500];
-            let bytes = match socket.recv(&mut buf).await {
-                Ok(bytes) => bytes,
-                Err(err) => return Err(Box::new(err)),
-            };
+            let bytes = socket.recv(&mut buf).await?;
             debug!("Receiving {} bytes", bytes);
             if bytes == 0 {
                 break;
             }
             for addr in &strategy.destinations() {
                 debug!("Sending {} bytes to address {}", bytes, addr);
-                if let Err(err) = socket.send_to(&buf[0..bytes], &addr).await {
-                    return Err(Box::new(err));
-                }
+                socket.send_to(&buf[0..bytes], &addr).await?;
             }
         }
         info!("session terminated");

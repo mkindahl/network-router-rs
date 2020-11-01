@@ -1,105 +1,92 @@
-//! Configuration parser.
+//! Configurations are written in JSON and consists of one section for
+//! each system:
 //!
-//! Configurations are written in JSON and consists of a set of
-//! forwarding rules.
+//! - Web interface
+//! - Forwarding rules
 //!
-//! # Rules
+//! # Web interface
 //!
-//! Each rule contains:
+//! Web interface configuration is under "web" key and has the
+//! following fields:
 //!
-//! - A protocol, which can be either "Tcp" or "Udp"
+//! - **port** is the port to listen on. If it is "*", then it means
+//! pick a random port to listen on.
 //!
-//! - A mode, which can be either "Broadcast" or
-//!   "RoundRobin". Defaults to "RoundRobin" for TCP and to
-//!   "Broadcast" for UDP.
+//! - **address** is a full address to listen on. This can be used for
+//! machines that have several network interfaces.
 //!
-//!   Note that if there is a single destination address, then the
-//!   mode is irrelevant since the behaviour is identical for both
-//!   modes.
+//! # Forwarding rules
 //!
-//! - One or more source addresses to listen on.
+//! Each rule section can contain four different attributes:
 //!
-//! - One or more destination addresses to forward to.
+//! - **protocol** is the protocol that the section should use. It can be
+//!   either `Udp` or `Tcp` (it is case-sensitive).
+//! - **mode** can be either `Broadcast` or `RoundRobin` and the default
+//!   is `Broadcast` for UDP and `RoundRobin` for TCP.
+//!  
+//!   - In broadcast mode, each packet will be sent to all destinations,
+//!     which only make sense for UDP.
 //!
-//! ## Broadcast Mode
+//!   - In round-robin mode, each packet will be sent to or connection
+//!     established with one target at a time in a round-robin fashion.
 //!
-//! In broadcast mode, each packet received on a source address is
-//! distributed to each destination address. Broadcast only makes
-//! sense for UDP so an error will be given if the protocol is TCP and
-//! there is more than one destination address.
-//!
-//! ## Round-Robin Mode
-//!
-//! In TCP round-robin mode, a connection on a source addresses will
-//! be established to one of the destination addresses in a
-//! round-robin manner.
-//!
-//! For UDP, the packets are sent to the destination ports in a
-//! round-robin fashion.
+//! - **source** is a source addresses that the router should
+//!   listen on.
+//!  
+//! - **destinations** is a list of destination addresses that the router
+//!   should send packets or establish connections with.
 //!
 //! # Example
 //!
 //! Here is a simple configuration that will broadcast UDP traffic
-//! from port 8080 and forward to ports 8081 and 8082 and forward TCP
-//! connections in a round-robin fashion from port 8090 to 8091 and
-//! 8092.
+//! from port 9080 and forward to ports 9081 and 9082 and forward TCP
+//! connections in a round-robin fashion from port 9090 to 9091 and
+//! 9092.
 //!
 //! ```json
 //! {
+//!     "web": {
+//!         "port": "8080",
+//!     },
 //!     "rules": [
 //!         {
 //!             "protocol":"Udp",
-//!             "mode":"Broadcast",
-//!             "sources": ["127.0.0.1:8080"],
+//!             "mode":"broadcast",
+//!             "source": "127.0.0.1:9080",
 //!             "destinations": [
-//!                 "127.0.0.1:8081",
-//!                 "127.0.0.1:8082"
+//!                 "127.0.0.1:9081",
+//!                 "127.0.0.1:9082"
 //!             ]
 //!         },
 //!         {
-//!             "protocol":"Tcp",
-//!             "mode":"RoundRobin",
-//!             "sources": ["127.0.0.1:8090"],
+//!             "protocol":"tcp",
+//!             "mode":"round-robin",
+//!             "source": "127.0.0.1:9090",
 //!             "destinations": [
-//!                 "127.0.0.1:8081",
-//!                 "127.0.0.1:8082"
+//!                 "127.0.0.1:9081",
+//!                 "127.0.0.1:9082"
 //!             ]
 //!         },
 //!     ]
 //! }
 
-use crate::strategy;
+use crate::session::{strategy, Rule};
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::net::SocketAddr;
+use std::{fs, net::SocketAddr};
+
+#[derive(PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Web {
+    Port(Option<u16>),
+    Address(SocketAddr),
+}
 
 /// Configuration with rules.
 #[derive(PartialEq, Debug, Serialize, Deserialize)]
 pub struct Config {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub web: Option<Web>,
     pub rules: Vec<Rule>,
-}
-
-/// A rule in the configuration file.
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub struct Rule {
-    pub protocol: Protocol,
-    pub mode: Mode,
-    pub sources: Vec<SocketAddr>,
-    pub destinations: Vec<SocketAddr>,
-}
-
-/// Mode for forwarding rule
-#[derive(Debug, PartialEq, Clone, Copy, Serialize, Deserialize)]
-pub enum Mode {
-    RoundRobin,
-    Broadcast,
-}
-
-/// Protocol
-#[derive(Debug, PartialEq, Clone, Copy, Serialize, Deserialize)]
-pub enum Protocol {
-    Udp,
-    Tcp,
 }
 
 #[derive(PartialEq, Debug)]
@@ -192,18 +179,27 @@ impl Rule {
 impl Config {
     /// Create a new empty configuration.
     pub fn new() -> Config {
-        Config { rules: Vec::new() }
+        Config {
+            web: None,
+            rules: Vec::new(),
+        }
+    }
+
+    pub fn set_port(&mut self, port: u16) -> &mut Self {
+        self.web = Some(Web::Port(Some(port)));
+        self
     }
 
     /// Add a rule to the configuration.
-    pub fn add(&mut self, rule: Rule) {
+    pub fn add_rule(&mut self, rule: Rule) {
         self.rules.push(rule)
     }
 
     /// Read a JSON configuration from a file name.
     pub fn from_file(filename: &str) -> Result<Config> {
-        info!("Loading configuration from {}", filename);
-        let config = serde_json::from_str(&fs::read_to_string(filename)?)?;
+        info!("Loading configuration using path '{}'", filename);
+        let contents = fs::read_to_string(filename)?;
+        let config = serde_json::from_str(&contents)?;
         Ok(config)
     }
 }
@@ -228,27 +224,56 @@ impl std::str::FromStr for Config {
     }
 }
 
+impl std::str::FromStr for Web {
+    type Err = Error;
+    fn from_str(text: &str) -> Result<Self> {
+        if let Ok(addr) = text.parse::<SocketAddr>() {
+            Ok(Web::Address(addr))
+        } else if let Ok(port) = text.parse::<u16>() {
+            Ok(Web::Port(Some(port)))
+        } else if text == "*" {
+            Ok(Web::Port(None))
+        } else {
+            Err(Error::SyntaxError(format!(
+                "'{}' is neither a port description nor a socket address",
+                text
+            )))
+        }
+    }
+}
+
+impl std::fmt::Display for Web {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Web::Port(Some(port)) => write!(f, "localhost:{}", port),
+            Web::Port(None) => write!(f, "localhost:*"),
+            Web::Address(addr) => write!(f, "{}", addr),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session::{Mode, Protocol};
 
     #[test]
     fn test_rule_parse() {
         let rule: Result<Rule> =
-            r#"{"protocol": "Udp", "mode": "Broadcast", "sources": [], "destinations": []}"#
+            r#"{"protocol": "udp", "mode": "broadcast", "source": "127.0.0.1:8080", "destinations": []}"#
                 .parse();
         assert_eq!(
             rule,
             Ok(Rule {
                 protocol: Protocol::Udp,
                 mode: Mode::Broadcast,
-                sources: vec![],
+                source: "127.0.0.1:8080".parse().unwrap(),
                 destinations: vec![]
             })
         );
 
-        let rule: Result<Rule> = r#"{"protocol":"Udp",
-                "mode":"Broadcast", "sources": ["127.0.0.1:8080"],
+        let rule: Result<Rule> = r#"{"protocol":"udp",
+                "mode":"broadcast", "source": "127.0.0.1:9080",
                 "destinations": []}"#
             .parse();
         assert_eq!(
@@ -256,39 +281,39 @@ mod tests {
             Ok(Rule {
                 protocol: Protocol::Udp,
                 mode: Mode::Broadcast,
-                sources: vec!["127.0.0.1:8080".parse().unwrap()],
+                source: "127.0.0.1:9080".parse().unwrap(),
                 destinations: vec![]
             })
         );
 
-        let rule: Result<Rule> = r#"{"protocol":"Udp",
-                "mode":"Broadcast", "sources": ["127.0.0.1:8080"],
-                "destinations": ["127.0.0.1:8081", "127.0.0.1:8082"]}"#
+        let rule: Result<Rule> = r#"{"protocol":"udp",
+                "mode":"broadcast", "source": "127.0.0.1:9080",
+                "destinations": ["127.0.0.1:9081", "127.0.0.1:9082"]}"#
             .parse();
         assert_eq!(
             rule,
             Ok(Rule {
                 protocol: Protocol::Udp,
                 mode: Mode::Broadcast,
-                sources: vec!["127.0.0.1:8080".parse().unwrap()],
+                source: "127.0.0.1:9080".parse().unwrap(),
                 destinations: vec![
-                    "127.0.0.1:8081".parse().unwrap(),
-                    "127.0.0.1:8082".parse().unwrap()
+                    "127.0.0.1:9081".parse().unwrap(),
+                    "127.0.0.1:9082".parse().unwrap()
                 ]
             })
         );
 
-        let rule: Result<Rule> = r#"{"protocol":"Udp",
-                "mode":"Broadcast", "sources": ["127.0.0.1:8080"],
-                "destinations": ["127.0.0.1:8081"]}"#
+        let rule: Result<Rule> = r#"{"protocol":"udp",
+                "mode":"broadcast", "source": "127.0.0.1:9080",
+                "destinations": ["127.0.0.1:9081"]}"#
             .parse();
         assert_eq!(
             rule,
             Ok(Rule {
                 protocol: Protocol::Udp,
                 mode: Mode::Broadcast,
-                sources: vec!["127.0.0.1:8080".parse().unwrap()],
-                destinations: vec!["127.0.0.1:8081".parse().unwrap()]
+                source: "127.0.0.1:9080".parse().unwrap(),
+                destinations: vec!["127.0.0.1:9081".parse().unwrap()]
             })
         );
     }
@@ -297,12 +322,13 @@ mod tests {
     fn test_config_parse() {
         let config: Result<Config> = r#"
 {
+    "web": {"port": 1111},
     "rules": [
 	{
-	    "protocol":"Udp",
-	    "mode":"Broadcast",
-	    "sources": ["127.0.0.1:8080"],
-	    "destinations": ["127.0.0.1:8081", "127.0.0.1:8082"]
+	    "protocol":"udp",
+	    "mode":"broadcast",
+	    "source": "127.0.0.1:9080",
+	    "destinations": ["127.0.0.1:9081", "127.0.0.1:9082"]
 	}
     ]
 }
@@ -311,16 +337,75 @@ mod tests {
         assert_eq!(
             config,
             Ok(Config {
+                web: Some(Web::Port(Some(1111))),
                 rules: vec![Rule {
                     protocol: Protocol::Udp,
                     mode: Mode::Broadcast,
-                    sources: vec!["127.0.0.1:8080".parse().unwrap()],
+                    source: "127.0.0.1:9080".parse().unwrap(),
                     destinations: vec![
-                        "127.0.0.1:8081".parse().unwrap(),
-                        "127.0.0.1:8082".parse().unwrap()
+                        "127.0.0.1:9081".parse().unwrap(),
+                        "127.0.0.1:9082".parse().unwrap()
                     ]
                 }]
             })
         );
+    }
+    #[test]
+    fn test_config_parse_no_web() {
+        let config: Result<Config> = r#"
+{
+    "rules": [
+	{
+	    "protocol":"udp",
+	    "mode":"broadcast",
+	    "source": "127.0.0.1:9080",
+	    "destinations": ["127.0.0.1:9081", "127.0.0.1:9082"]
+	}
+    ]
+}
+"#
+        .parse();
+        assert_eq!(
+            config,
+            Ok(Config {
+                web: None,
+                rules: vec![Rule {
+                    protocol: Protocol::Udp,
+                    mode: Mode::Broadcast,
+                    source: "127.0.0.1:9080".parse().unwrap(),
+                    destinations: vec![
+                        "127.0.0.1:9081".parse().unwrap(),
+                        "127.0.0.1:9082".parse().unwrap()
+                    ]
+                }]
+            })
+        );
+    }
+
+    #[test]
+    fn test_config_serialize_no_web() {
+        let config = Config {
+            web: None,
+            rules: vec![Rule {
+                protocol: Protocol::Udp,
+                mode: Mode::Broadcast,
+                source: "127.0.0.1:9080".parse().unwrap(),
+                destinations: vec![
+                    "127.0.0.1:9081".parse().unwrap(),
+                    "127.0.0.1:9082".parse().unwrap(),
+                ],
+            }],
+        };
+        let result = r#"{"rules":[{"protocol":"udp","mode":"broadcast","source":"127.0.0.1:9080","destinations":["127.0.0.1:9081","127.0.0.1:9082"]}]}"#;
+        assert_eq!(serde_json::to_string(&config).unwrap(), result.to_string());
+    }
+
+    #[test]
+    fn test_web_parse() {
+        assert_eq!(
+            Web::Port(Some(4711)).to_string(),
+            "localhost:4711".to_string()
+        );
+        assert_eq!(Web::Port(None).to_string(), "localhost:*".to_string());
     }
 }

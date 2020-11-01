@@ -47,7 +47,7 @@ with one section for each forwarding configuration:
 	{
 	    "protocol":"Udp",
 	    "mode":"Broadcast",
-	    "sources": ["127.0.0.1:8080"],
+	    "source": "127.0.0.1:8080",
 	    "destinations": ["127.0.0.1:8081"]
 	}
     ]
@@ -67,7 +67,7 @@ Each section can contain four different attributes:
   - In round-robin mode, each packet will be sent to or connection
     established with one target at a time in a round-robin fashion.
 
-- **sources** is a list of source addresses that the router should
+- **source** is a source addresses that the router should
   listen on.
   
 - **destinations** is a list of destination addresses that the router
