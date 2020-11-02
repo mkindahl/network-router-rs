@@ -32,3 +32,4 @@ pub mod config;
 pub mod protocol;
 pub mod storage;
 pub mod strategy;
+pub mod web;

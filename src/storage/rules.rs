@@ -65,7 +65,7 @@ pub enum Protocol {
 /// Storage for state information.
 pub struct Database {
     next_id: i32,
-    rules: HashMap<i32, Rule>,
+    pub rules: HashMap<i32, Rule>,
 }
 
 impl Database {

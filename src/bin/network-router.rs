@@ -26,6 +26,7 @@ use router::{
     protocol::{tcp::TcpSession, udp::UdpSession},
     storage::{Database, Protocol},
     strategy::*,
+    web,
 };
 use std::str::FromStr;
 use std::sync::Arc;
@@ -77,6 +78,12 @@ async fn main() {
 
     let database = Arc::new(Mutex::new(Database::new()));
 
+    let (sender, receiver) = tokio::sync::oneshot::channel::<web::Signal>();
+    let web_service = tokio::spawn({
+        let database = database.clone();
+        web::service(database, receiver)
+    });
+
     for rule in config.rules {
         match rule.protocol {
             Protocol::Udp => {
@@ -104,5 +111,13 @@ async fn main() {
             Ok(result) => info!("session exited {:?}", result),
             Err(err) => error!("error: {}", err),
         }
+    }
+
+    if let Err(err) = sender.send(web::Signal::Shutdown) {
+        eprintln!("shutdown error: {:?}", err);
+    }
+
+    if let Err(e) = web_service.await {
+        eprintln!("server error: {}", e);
     }
 }
