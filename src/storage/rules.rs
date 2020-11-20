@@ -36,7 +36,7 @@
 //!
 
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, net::SocketAddr};
+use std::{collections::HashMap, net::SocketAddr, str::FromStr};
 
 /// Rule describing where to listen for connections or packets and
 /// where to forward the connections or packets.
@@ -62,10 +62,15 @@ pub enum Protocol {
     Tcp,
 }
 
+#[derive(Debug, PartialEq)]
+pub enum Error {
+    ParseError,
+}
+
 /// Storage for state information.
 pub struct Database {
-    next_id: i32,
-    pub rules: HashMap<i32, Rule>,
+    next_id: u32,
+    pub rules: HashMap<u32, Rule>,
 }
 
 impl Database {
@@ -76,14 +81,42 @@ impl Database {
         }
     }
 
-    pub fn add_rule(&mut self, rule: Rule) {
-        self.rules.insert(self.next_id, rule);
+    pub fn add_rule(&mut self, rule: Rule) -> u32 {
+        let id = self.next_id;
         self.next_id += 1;
+        self.rules.insert(id, rule);
+        id
     }
 }
 
 impl Default for Database {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl FromStr for Protocol {
+    type Err = Error;
+    fn from_str(protocol: &str) -> Result<Protocol, <Self as FromStr>::Err> {
+        match protocol.to_uppercase().as_str() {
+            "UDP" => Ok(Protocol::Udp),
+            "TCP" => Ok(Protocol::Tcp),
+            _ => Err(Error::ParseError),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_protocol() {
+        assert_eq!("udp".parse(), Ok(Protocol::Udp));
+        assert_eq!("Udp".parse(), Ok(Protocol::Udp));
+        assert_eq!("UDP".parse(), Ok(Protocol::Udp));
+        assert_eq!("tcp".parse(), Ok(Protocol::Tcp));
+        assert_eq!("Tcp".parse(), Ok(Protocol::Tcp));
+        assert_eq!("TCP".parse(), Ok(Protocol::Tcp));
     }
 }
