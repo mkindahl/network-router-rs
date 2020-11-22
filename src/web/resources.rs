@@ -11,7 +11,7 @@ pub(crate) enum Resource {
 
 impl Resource {
     pub(crate) fn from_path(path: &[&str]) -> Result<Resource> {
-        if path.len() > 0 {
+        if !path.is_empty() {
             match path[0] {
                 "rules" => parse_rules(&path[1..]),
                 _ => Err(Error::ResourceNotFound),
@@ -26,13 +26,13 @@ impl FromStr for Resource {
     type Err = Error;
 
     fn from_str(path: &str) -> Result<Resource> {
-        let path: Vec<&str> = path.split("/").collect();
+        let path: Vec<&str> = path.split('/').collect();
         Resource::from_path(&path)
     }
 }
 
 fn parse_rules(path: &[&str]) -> Result<Resource> {
-    if path.len() > 0 {
+    if !path.is_empty() {
         let rule_no: u32 = path[0].parse().map_err(|_| Error::ResourceNotFound)?;
         parse_rule(rule_no, &path[1..])
     } else {
@@ -41,7 +41,7 @@ fn parse_rules(path: &[&str]) -> Result<Resource> {
 }
 
 fn parse_rule(rule_no: u32, path: &[&str]) -> Result<Resource> {
-    if path.len() > 0 {
+    if !path.is_empty() {
         match path[0] {
             "routes" => parse_routes(rule_no, &path[1..]),
             _ => Err(Error::ResourceNotFound),
@@ -52,7 +52,7 @@ fn parse_rule(rule_no: u32, path: &[&str]) -> Result<Resource> {
 }
 
 fn parse_routes(rule_no: u32, path: &[&str]) -> Result<Resource> {
-    if path.len() > 0 {
+    if !path.is_empty() {
         let route_no: u32 = path[0].parse().map_err(|_| Error::ResourceNotFound)?;
         Ok(Resource::Route(rule_no, Some(route_no)))
     } else {
@@ -68,12 +68,21 @@ mod tests {
     fn test_rules() {
         assert_eq!(Resource::from_path(&[]), Err(Error::ResourceNotFound));
         assert_eq!(Resource::from_path(&["rules"]), Ok(Resource::Rule(None)));
+        assert_eq!(Resource::from_str("rules"), Ok(Resource::Rule(None)));
         assert_eq!(
             Resource::from_path(&["rules", "123"]),
             Ok(Resource::Rule(Some(123u32)))
         );
         assert_eq!(
+            Resource::from_str("rules/123"),
+            Ok(Resource::Rule(Some(123u32)))
+        );
+        assert_eq!(
             Resource::from_path(&["rules", "foo"]),
+            Err(Error::ResourceNotFound)
+        );
+        assert_eq!(
+            Resource::from_str("rules/foo"),
             Err(Error::ResourceNotFound)
         );
     }

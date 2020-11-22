@@ -48,6 +48,12 @@ pub struct Rule {
     pub destinations: Vec<SocketAddr>,
 }
 
+pub struct Route {
+    pub protocol: Protocol,
+    pub source: SocketAddr,
+    pub destination: SocketAddr,
+}
+
 /// Mode for forwarding rule
 #[derive(Debug, PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub enum Mode {
@@ -71,6 +77,7 @@ pub enum Error {
 pub struct Database {
     next_id: u32,
     pub rules: HashMap<u32, Rule>,
+    pub routes: HashMap<u32, Vec<Route>>,
 }
 
 impl Database {
@@ -78,6 +85,7 @@ impl Database {
         Database {
             next_id: 0,
             rules: HashMap::new(),
+            routes: HashMap::new(),
         }
     }
 

@@ -1,0 +1,18 @@
+<html>
+  <body>
+    <table border="1">
+      <tr><th>Mode</th><td>{{ rule.mode }}</td></tr>
+      <tr><th>Source</th><td>{{ rule.source }}</td></tr>
+      <tr><th>Destinations</th><td>{{ rule.destinations|join(", ") }}</td></tr>
+    </table>
+    <table border="1">
+      <tr><th>Source</th><th>Destination</th></tr>
+      {% for route in routes %}
+      <tr>
+	<td>{{ route.source }}</td>
+	<td>{{ route.destination }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </body>
+</html>

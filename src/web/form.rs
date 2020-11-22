@@ -3,11 +3,11 @@
 //! network router.
 //!
 use crate::{
-    storage::{Mode, Protocol, Rule},
+    storage::{rules::Route, Mode, Protocol, Rule},
     web::{
         error::{Error, Result},
         resources::Resource,
-        DatabaseRef,
+        Database, DatabaseRef,
     },
 };
 use askama::Template;
@@ -17,16 +17,21 @@ use url::form_urlencoded;
 
 #[derive(Template)]
 #[template(path = "one_rule.html")]
-struct OneRuleTemplate {
-    mode: String,
-    source: String,
-    destinations: Vec<String>,
+struct OneRuleTemplate<'a> {
+    rule: &'a Rule,
 }
 
 #[derive(Template)]
 #[template(path = "all_rules.html")]
 struct AllRulesTemplate<'a> {
     rules: Vec<&'a Rule>,
+}
+
+#[derive(Template)]
+#[template(path = "all_routes.html")]
+struct AllRoutesTemplate<'a> {
+    rule: &'a Rule,
+    routes: Vec<&'a Route>,
 }
 
 /// Route the request to the correct submodule and process the
@@ -52,9 +57,8 @@ async fn process_get(database: DatabaseRef, resource: Resource) -> Result<Respon
     match resource {
         Resource::Rule(None) => all_rules_page(database).await,
         Resource::Rule(Some(rule)) => one_rule_page(database, rule).await,
-        _ => todo!(),
-        // Resource::Route(rule, None) => all_routes_page(database, rule).await,
-        // Resource::Route(rule, Some(route)) => one_route_page(database, rule, route).await,
+        Resource::Route(rule, None) => all_routes_page(database, rule).await,
+        Resource::Route(_, Some(_)) => todo!("single route page"),
     }
 }
 
@@ -101,7 +105,7 @@ async fn process_add_rule_request(
     let protocol: Protocol = get_parameter(&params, "protocol")?;
     let destinations = match params.get("destinations") {
         Some(param) => param
-            .split(",")
+            .split(',')
             .map(|addr| {
                 addr.parse()
                     .map_err(|_| Error::BadParameter(addr.to_string()))
@@ -129,24 +133,19 @@ async fn all_rules_page(database: DatabaseRef) -> Result<Response<Body>> {
 }
 
 async fn one_rule_page(database: DatabaseRef, rule_no: u32) -> Result<Response<Body>> {
-    match database.lock().await.rules.get(&rule_no) {
-        Some(rule) => {
-            let mode = rule.mode.to_string();
-            let source = rule.source.to_string();
-            let destinations: Vec<_> = rule
-                .destinations
-                .iter()
-                .map(|addr| addr.to_string())
-                .collect();
-            let page = OneRuleTemplate {
-                mode,
-                source,
-                destinations,
-            };
-            Ok(Response::new(Body::from(page.render()?)))
-        }
-        None => Err(Error::ResourceNotFound),
-    }
+    let handle = database.lock().await;
+    let rule = get_rule(&handle, rule_no)?;
+    let page = OneRuleTemplate { rule };
+    Ok(Response::new(Body::from(page.render()?)))
+}
+
+async fn all_routes_page(database: DatabaseRef, rule_no: u32) -> Result<Response<Body>> {
+    let handle = database.lock().await;
+    let page = AllRoutesTemplate {
+        rule: get_rule(&handle, rule_no)?,
+        routes: get_routes(&handle, rule_no)?,
+    };
+    Ok(Response::new(Body::from(page.render()?)))
 }
 
 /// Forms only support GET and POST according to the standard, so we
@@ -160,4 +159,24 @@ fn get_method(params: &HashMap<String, String>) -> Result<Method> {
         Some(action) if action == "POST" => Ok(Method::POST),
         Some(action) => Err(Error::BadMethod(action.to_string())),
     }
+}
+
+/// Helper function to get a rule or return the apropriate result.
+fn get_rule<'a>(
+    handle: &'a futures::lock::MutexGuard<'a, Database>,
+    rule_no: u32,
+) -> Result<&'a Rule> {
+    handle.rules.get(&rule_no).ok_or(Error::ResourceNotFound)
+}
+
+/// Helper function to get a route or return the apropriate result.
+fn get_routes<'a>(
+    handle: &'a futures::lock::MutexGuard<'a, Database>,
+    rule_no: u32,
+) -> Result<Vec<&'a Route>> {
+    let routes = handle
+        .routes
+        .get(&rule_no)
+        .ok_or(Error::UnsatisfiedInvariant)?;
+    Ok(routes.iter().collect::<Vec<&'a Route>>())
 }

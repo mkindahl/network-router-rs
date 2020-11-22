@@ -23,9 +23,9 @@ pub(crate) async fn process_request(
     resource: Resource,
     req: Request<Body>,
 ) -> Result<Response<Body>> {
-    match req.method() {
-        &Method::POST => process_post(database, resource, req).await,
-        &Method::GET => process_get(database, resource).await,
+    match *req.method() {
+        Method::POST => process_post(database, resource, req).await,
+        Method::GET => process_get(database, resource).await,
         _ => Err(Error::ResourceNotFound),
     }
 }

@@ -21,15 +21,15 @@ fn to_str<'a>(header: HeaderName, value: Result<&'a HeaderValue>) -> Result<&'a 
 /// header.
 pub(crate) fn get_content_type(req: &Request<Body>) -> Result<&str> {
     let headers = req.headers();
-    match req.method() {
-        &Method::POST => to_str(
+    match *req.method() {
+        Method::POST => to_str(
             header::CONTENT_TYPE,
             headers
                 .get(header::CONTENT_TYPE)
                 .ok_or(Error::MissingHeader(header::CONTENT_TYPE)),
         ),
 
-        &Method::GET => to_str(
+        Method::GET => to_str(
             header::ACCEPT,
             headers
                 .get(header::ACCEPT)

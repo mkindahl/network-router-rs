@@ -1,12 +1,12 @@
 <html>
   <body>
     <table border="1">
-      <tr><th>Mode</th><td>{{ mode }}</td></tr>
-      <tr><th>Source</th><td>{{ source }}</td></tr>
+      <tr><th>Mode</th><td>{{ rule.mode }}</td></tr>
+      <tr><th>Source</th><td>{{ rule.source }}</td></tr>
       <tr>
 	<table>
 	  <tr><th>Destinations</th></tr>
-	  {% for destination in destinations %}
+	  {% for destination in rule.destinations %}
 	  <tr><td>{{ destination }}</td></tr>
 	  {% endfor %}
     </table>

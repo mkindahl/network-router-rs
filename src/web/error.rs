@@ -8,7 +8,8 @@ pub(crate) enum Error {
     BadParameter(String),
     MissingHeader(HeaderName),
     BadHeader(HeaderName),
-    InternalError(String),
+    Internal(String),
+    UnsatisfiedInvariant,
 }
 
 pub(crate) type Result<T> = std::result::Result<T, Error>;
@@ -22,7 +23,8 @@ impl std::fmt::Display for Error {
             Error::BadParameter(param) => write!(f, "bad parameter: {}", param),
             Error::MissingHeader(_) => write!(f, "missing header"),
             Error::BadHeader(header) => write!(f, "bad header: {}", header),
-            Error::InternalError(text) => write!(f, "internal error: {}", text),
+            Error::Internal(text) => write!(f, "internal error: {}", text),
+            Error::UnsatisfiedInvariant => write!(f, "invariant error"),
         }
     }
 }
@@ -36,7 +38,8 @@ impl std::error::Error for Error {
             Error::BadParameter(_) => "bad parameter",
             Error::MissingHeader(_) => "missing header",
             Error::BadHeader(_) => "bad header",
-            Error::InternalError(_) => "internal error",
+            Error::Internal(_) => "internal error",
+            Error::UnsatisfiedInvariant => "unsatisfied invariant",
         }
     }
 }
@@ -47,7 +50,7 @@ impl From<Error> for Response<Body> {
         match err {
             Error::ResourceNotFound => builder
                 .status(StatusCode::NOT_FOUND)
-                .body(Body::from(format!("resource not found")))
+                .body(Body::from("resource not found".to_string()))
                 .unwrap(),
             err => builder
                 .status(StatusCode::BAD_REQUEST)
@@ -59,30 +62,30 @@ impl From<Error> for Response<Body> {
 
 impl From<askama::Error> for Error {
     fn from(err: askama::Error) -> Self {
-        Error::InternalError(format!("{}", err))
+        Error::Internal(format!("{}", err))
     }
 }
 
 impl From<hyper::Error> for Error {
     fn from(err: hyper::Error) -> Self {
-        Error::InternalError(format!("{}", err))
+        Error::Internal(format!("{}", err))
     }
 }
 
 impl From<hyper::http::Error> for Error {
     fn from(err: hyper::http::Error) -> Self {
-        Error::InternalError(format!("{}", err))
+        Error::Internal(format!("{}", err))
     }
 }
 
 impl From<serde_json::Error> for Error {
     fn from(err: serde_json::Error) -> Self {
-        Error::InternalError(format!("{}", err))
+        Error::Internal(format!("{}", err))
     }
 }
 
 impl From<::http::uri::InvalidUri> for Error {
     fn from(err: ::http::uri::InvalidUri) -> Self {
-        Error::InternalError(format!("{}", err))
+        Error::Internal(format!("{}", err))
     }
 }
