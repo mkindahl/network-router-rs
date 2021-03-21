@@ -1,11 +1,11 @@
-# Simpel Connection or Packet Router in Rust
+# Simple Connection and Packet Router in Rust
 
 This is a simple connection/port-based network router implemented in
-Rust using Tokio using async/await.
+Rust using Tokio and async/await.
 
-For UDP it currently implement simple UDP packet forwarding. It
-can listen on one port and forward packets received to one or more
-other addresses.
+For UDP it currently implement simple UDP packet forwarding. It can
+listen on one port and forward packets received to one or more other
+addresses.
 
 For TCP it currently implement simple round-robin selection of
 incoming connections. It listens on one port and for every connection
@@ -45,8 +45,8 @@ with one section for each forwarding configuration:
 {
     "sections": [
 	{
-	    "protocol":"Udp",
-	    "mode":"Broadcast",
+	    "protocol":"udp",
+	    "mode":"broadcast",
 	    "source": "127.0.0.1:8080",
 	    "destinations": ["127.0.0.1:8081"]
 	}
@@ -57,9 +57,9 @@ with one section for each forwarding configuration:
 Each section can contain four different attributes:
 
 - **protocol** is the protocol that the section should use. It can be
-  either `Udp` or `Tcp` (it is case-sensitive).
-- **mode** can be either `Broadcast` or `RoundRobin` and the default
-  is `Broadcast` for UDP and `RoundRobin` for TCP.
+  either `udp` or `tcp`.
+- **mode** can be either `broadcast` or `round-robin` and the default
+  is `broadcast` for UDP and `round-robin` for TCP.
   
   - In broadcast mode, each packet will be sent to all destinations,
     which only make sense for UDP.
@@ -100,4 +100,4 @@ index 1a00679..ea0205d 100644
 # Contribution
 
 The code is distributed using Apache License Version 2.0. See the
-`LICENCE` file for more information.
+`LICENSE` file for more information.

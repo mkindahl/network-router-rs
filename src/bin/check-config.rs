@@ -1,7 +1,6 @@
 //! Check the format of a configuration file.
 
-use std::env::args;
-use std::fs::read_to_string;
+use std::{env::args, fs::read_to_string};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = args().collect();
