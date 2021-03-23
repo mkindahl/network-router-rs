@@ -2,7 +2,7 @@ mod common;
 
 use crate::common::Harness;
 use bytes::Buf;
-use hyper::{Body, Method};
+use hyper::{Body, Method, StatusCode};
 use router::session::Rule;
 
 const CONFIG: &str = r#"{
@@ -29,11 +29,12 @@ fn test_json() {
     // Ask for the rules that the harness was configured with. We
     // should find them all.
     {
-        let body = harness
+        let (body, status) = harness
             .send_request(Method::GET, "/rules", Body::default())
             .unwrap();
         let actual_rules: Vec<Rule> = serde_json::from_reader(body.reader()).unwrap();
         let expected_rules = vec![Rule::from_json(CONFIG).unwrap()];
+        assert_eq!(status, StatusCode::OK);
         assert_eq!(actual_rules, expected_rules);
     }
 
@@ -41,11 +42,12 @@ fn test_json() {
     // rules.
     {
         let req_body = Body::from(ADD_RULE);
-        let resp_body = harness
+        let (body, status) = harness
             .send_request(Method::POST, "/rules", req_body)
             .unwrap();
-        assert_eq!(br#"{"rule_id":1}"#, resp_body.chunk());
-        let body = harness
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(br#"{"rule_id":1}"#, body.chunk());
+        let (body, status) = harness
             .send_request(Method::GET, "/rules", Body::default())
             .unwrap();
         let expected_rules = vec![
@@ -53,6 +55,7 @@ fn test_json() {
             Rule::from_json(ADD_RULE).unwrap(),
         ];
         let actual_rules: Vec<Rule> = serde_json::from_reader(body.reader()).unwrap();
+        assert_eq!(status, StatusCode::OK);
         assert_eq!(actual_rules, expected_rules);
     }
 }

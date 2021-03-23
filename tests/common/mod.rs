@@ -2,7 +2,7 @@ extern crate router;
 
 use bytes::Buf;
 use http::uri::{Authority, InvalidUri, Scheme};
-use hyper::{header, Body, Client, Method, Request, Uri};
+use hyper::{header, Body, Client, Method, Request, StatusCode, Uri};
 use log::debug;
 use router::{
     config::{self, Config, Web},
@@ -22,12 +22,14 @@ use tokio::runtime::Runtime;
 /// test to start the router with a single rule and attach sockets to
 /// the source and destination.
 ///
+/// Right now it only supports UDP sockets in the configuration.
+///
 /// # Example
 ///
 /// ```
 /// const CONFIG: &str = r#"{
-///   "protocol": "Udp",
-///   "mode": "Broadcast",
+///   "protocol": "udp",
+///   "mode": "broadcast",
 ///   "source": "127.0.0.1:8080",
 ///   "destinations": ["127.0.0.1:8081", "127.0.0.1:8082"]
 /// }"#;
@@ -37,26 +39,26 @@ use tokio::runtime::Runtime;
 ///   let rule = config::Rule::from_json(CONFIG)?;
 ///   let mut harness = Harness::new(rule)?;
 ///   harness.start()?;
-///   harness.test_send_str("Just a test")?;
+///   harness.send_str("Just a test")?;
 ///   Ok(())
 /// }
 /// ```
 pub struct Harness {
     state: Option<State>,
     runtime: Option<Runtime>,
-    dispatcher: Dispatcher,
+    connection: Connection,
     rule: Rule,
 }
 
-struct Dispatcher {
+struct Connection {
     endpoint: Web,
 }
 
 /// Test runtime.
 struct State {
     child: Child,
-    _sender: UdpSocket,
-    _receivers: Vec<UdpSocket>,
+    sender: UdpSocket,
+    receivers: Vec<UdpSocket>,
 }
 
 impl Harness {
@@ -64,7 +66,7 @@ impl Harness {
     pub fn new(rule: Rule, port: u16) -> Harness {
         Harness {
             rule,
-            dispatcher: Dispatcher {
+            connection: Connection {
                 endpoint: Web::Port(Some(port)),
             },
             runtime: None,
@@ -83,7 +85,7 @@ impl Harness {
         };
 
         let config = Config {
-            web: Some(self.dispatcher.endpoint),
+            web: Some(self.connection.endpoint),
             rules: vec![self.rule.clone()],
         };
 
@@ -107,20 +109,22 @@ impl Harness {
         self.runtime = Some(Runtime::new()?);
         self.state = Some(State {
             child,
-            _sender: sender,
-            _receivers: receivers,
+            sender: sender,
+            receivers: receivers,
         });
         Ok(())
     }
 
-    /// Send a string as a packet to the UDP port.
+    /// Send a string as a packet to the UDP port and check that it is
+    /// received in the receive sockets.
     #[cfg(test)]
-    pub fn test_send_str(&mut self, packet: &str) -> Result<(), Error> {
+    #[allow(dead_code)]
+    pub fn send_str(&mut self, packet: &str) -> Result<(), Error> {
         match self.state {
             Some(ref state) => match self.rule.mode {
                 Mode::Broadcast => {
-                    state._sender.send_to(packet.as_bytes(), self.rule.source)?;
-                    for receiver in &state._receivers {
+                    state.sender.send_to(packet.as_bytes(), self.rule.source)?;
+                    for receiver in &state.receivers {
                         let mut buf = [0; 1500];
                         let bytes = receiver.recv(&mut buf)?;
                         assert_eq!(Ok(packet), from_utf8(&buf[0..bytes]));
@@ -136,25 +140,27 @@ impl Harness {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     pub fn send_request(
         &mut self,
         method: Method,
         resource: &str,
         body: Body,
-    ) -> Result<impl Buf, Error> {
-        let result = self.dispatcher.dispatch(method, resource, body);
+    ) -> Result<(impl Buf, StatusCode), Error> {
+        let result = self.connection.request(method, resource, body);
         self.runtime.as_mut().unwrap().block_on(result)
     }
 }
 
-impl Dispatcher {
+impl Connection {
     #[cfg(test)]
-    async fn dispatch(
+    #[allow(dead_code)]
+    async fn request(
         &self,
         method: Method,
         resource: &str,
         body: Body,
-    ) -> Result<impl Buf, Error> {
+    ) -> Result<(impl Buf, StatusCode), Error> {
         let scheme: Scheme = "http".parse()?;
         let authority: Authority = self.endpoint.to_string().parse()?;
         let req = Request::builder()
@@ -170,8 +176,9 @@ impl Dispatcher {
             .body(body)?;
         let client = Client::new();
         let resp = client.request(req).await?;
+        let status = resp.status();
         let body = hyper::body::aggregate(resp).await?;
-        Ok(body)
+        Ok((body, status))
     }
 }
 

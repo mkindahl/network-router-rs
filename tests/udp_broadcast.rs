@@ -32,7 +32,7 @@ fn test_basic() -> Result<(), Box<dyn Error>> {
     // For each in a list of strings, send it and verify that it
     // arrives correctly to all destinations.
     for msg in msgs {
-        harness.test_send_str(msg)?;
+        harness.send_str(msg)?;
     }
     Ok(())
 }
