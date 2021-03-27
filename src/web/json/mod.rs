@@ -19,6 +19,7 @@ pub(crate) fn resources(
     db: DbRef,
 ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
     resources::list_rules(db.clone())
+        .or(resources::update_rule(db.clone()))
         .or(resources::create_rule(db.clone()))
         .or(resources::delete_rule(db))
 }

@@ -30,3 +30,15 @@ pub(crate) async fn delete_rule(rule_id: usize, db: DbRef) -> Result<impl warp::
         None => Ok(StatusCode::NOT_FOUND),
     }
 }
+
+pub(crate) async fn update_rule(
+    rule_id: usize,
+    rule: Rule,
+    db: DbRef,
+) -> Result<impl warp::Reply, Infallible> {
+    let mut handle = db.write().await;
+    match handle.update_rule(rule_id, rule) {
+        Some(_) => Ok(StatusCode::OK),
+        None => Ok(StatusCode::NOT_FOUND),
+    }
+}

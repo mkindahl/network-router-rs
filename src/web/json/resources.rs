@@ -40,6 +40,16 @@ pub(crate) fn delete_rule(
         .and_then(handlers::delete_rule)
 }
 
+pub(crate) fn update_rule(
+    db: DbRef,
+) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+    warp::path!("rules" / usize)
+        .and(warp::put())
+        .and(json_body())
+        .and(with_db(db))
+        .and_then(handlers::update_rule)
+}
+
 fn json_body() -> impl Filter<Extract = (Rule,), Error = warp::Rejection> + Clone {
     warp::body::content_length_limit(1024 * 16).and(warp::body::json())
 }

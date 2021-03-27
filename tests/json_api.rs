@@ -4,6 +4,7 @@ use crate::common::Harness;
 use bytes::Buf;
 use hyper::{Body, Method, StatusCode};
 use router::session::Rule;
+use serde::Deserialize;
 
 const CONFIG: &str = r#"{
   "protocol": "udp",
@@ -19,6 +20,13 @@ const ADD_RULE: &str = r#"{
   "destinations": ["192.168.1.1:2345", "192.168.1.136:2345"]
 }"#;
 
+const UPDATE_RULE: &str = r#"{
+  "protocol": "udp",
+  "mode": "round-robin",
+  "source": "127.0.0.1:2345",
+  "destinations": ["192.168.1.136:2345"]
+}"#;
+
 /// Basic test of JSON get information.
 #[test]
 fn test_json() {
@@ -32,19 +40,23 @@ fn test_json() {
 
     // Try to add one rule and check that it is there when we ask for
     // rules.
-    test_add_rule(&mut harness);
+    let rule_no = test_add_rule(&mut harness, ADD_RULE);
+
+    // Test updating the added rule
+    test_update_rule(&mut harness, rule_no, UPDATE_RULE);
 
     // Check that deleting the rule actually deletes it.
-    test_delete_rule(&mut harness);
+    test_delete_rule(&mut harness, rule_no);
 }
 
-fn test_add_rule(harness: &mut Harness) {
-    let req_body = Body::from(ADD_RULE);
+fn test_add_rule(harness: &mut Harness, json: &'static str) -> usize {
+    let req_body = Body::from(json);
     let (body, status) = harness
         .send_request(Method::POST, "/rules", req_body)
         .unwrap();
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(br#"{"rule_id":1}"#, body.chunk());
+    let resp: CreateReply = serde_json::from_slice(body.chunk()).unwrap();
+    assert_eq!(CreateReply { rule_id: 1 }, resp);
     expect_rules(
         harness,
         vec![
@@ -52,18 +64,35 @@ fn test_add_rule(harness: &mut Harness) {
             Rule::from_json(ADD_RULE).unwrap(),
         ],
     );
+    resp.rule_id
 }
 
-fn test_delete_rule(harness: &mut Harness) {
+fn test_delete_rule(harness: &mut Harness, rule_no: usize) {
+    let path = format!("/rules/{}", rule_no);
     let (_, status) = harness
-        .send_request(Method::DELETE, "/rules/1", Body::default())
+        .send_request(Method::DELETE, &path, Body::default())
         .unwrap();
     assert_eq!(status, StatusCode::NO_CONTENT);
     expect_rules(harness, vec![Rule::from_json(CONFIG).unwrap()]);
     let (_, status) = harness
-        .send_request(Method::DELETE, "/rules/1", Body::default())
+        .send_request(Method::DELETE, &path, Body::default())
         .unwrap();
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+fn test_update_rule(harness: &mut Harness, rule_no: usize, json: &'static str) {
+    let path = format!("/rules/{}", rule_no);
+    let (_, status) = harness
+        .send_request(Method::PUT, &path, Body::from(json))
+        .unwrap();
+    assert_eq!(status, StatusCode::OK);
+    expect_rules(
+        harness,
+        vec![
+            Rule::from_json(CONFIG).unwrap(),
+            Rule::from_json(UPDATE_RULE).unwrap(),
+        ],
+    );
 }
 
 fn expect_rules(harness: &mut Harness, expected_rules: Vec<Rule>) {
@@ -73,4 +102,9 @@ fn expect_rules(harness: &mut Harness, expected_rules: Vec<Rule>) {
     let actual_rules: Vec<Rule> = serde_json::from_reader(body.reader()).unwrap();
     assert_eq!(status, StatusCode::OK);
     assert_eq!(actual_rules, expected_rules);
+}
+
+#[derive(Deserialize, PartialEq, Debug)]
+struct CreateReply {
+    rule_id: usize,
 }
