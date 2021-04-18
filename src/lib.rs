@@ -15,6 +15,7 @@
 #[macro_use]
 extern crate log;
 
+#[cfg(test)]
 #[macro_export]
 macro_rules! assert_matches {
     ($string:expr, $pattern:expr) => {{
@@ -30,5 +31,5 @@ macro_rules! assert_matches {
 
 pub mod config;
 pub mod protocol;
+pub mod rest;
 pub mod session;
-pub mod web;

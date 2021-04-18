@@ -1,6 +1,6 @@
 //! Handlers for JSON requests
 
-use crate::{session::Rule, web::DbRef};
+use crate::{rest::DbRef, session::Rule};
 use serde::Serialize;
 use std::convert::Infallible;
 use warp::{self, http::StatusCode};

@@ -1,11 +1,8 @@
 //! Resources (routes) for JSON.
 
 use crate::{
-    session::Rule,
-    web::{
-        json::{handlers, with_db},
-        DbRef,
-    },
+    rest::{handlers, with_db},
+    session::{DbRef, Rule},
 };
 use warp::Filter;
 
