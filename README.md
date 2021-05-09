@@ -14,9 +14,6 @@ of other addresses in a round-robin fashion. Packets will then simply
 be forwarded when they arrive in both directions independently of each
 others.
 
-Routes right now have to be set up statically, but the intention is to
-implement a good API for dynamically setting up and changing routes.
-	
 # How to build
 
 ```
@@ -30,9 +27,9 @@ cargo build
 
 * Start the router. 
 
-  ```
-  target/debug/network-router --config-file=config.json
-  ```
+```
+cargo run --bin network-router -- --config-file=config.json
+```
 
 You can get a list of command-line options using `--help`.
 
@@ -72,30 +69,6 @@ Each section can contain four different attributes:
   
 - **destinations** is a list of destination addresses that the router
   should send packets or establish connections with.
-
-# Caveat
-
-For the TCP connection, shutdown does not currently work since the
-"shutdown" function for a `TcpStream` does not do anything at all
-(!). See [Issue #852](https://github.com/tokio-rs/tokio/issues/852) in
-(tokio-rs/tokio)[https://github.com/tokio-rs/tokio].
-
-A simple (but ugly) way around this is to apply the following patch to
-`tokio` repository:
-
-```
-diff --git a/tokio-tcp/src/stream.rs b/tokio-tcp/src/stream.rs
-index 1a00679..ea0205d 100644
---- a/tokio-tcp/src/stream.rs
-+++ b/tokio-tcp/src/stream.rs
-@@ -844,6 +844,7 @@ impl<'a> AsyncRead for &'a TcpStream {
- 
- impl<'a> AsyncWrite for &'a TcpStream {
-     fn shutdown(&mut self) -> Poll<(), io::Error> {
-+        self.io.get_ref().shutdown(Shutdown::Write)?;
-         Ok(().into())
-     }
-```
 
 # Contribution
 
