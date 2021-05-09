@@ -74,11 +74,21 @@ use crate::session::{strategy, Rule};
 use serde::{Deserialize, Serialize};
 use std::{fs, net::SocketAddr};
 
-#[derive(PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Web {
     Port(Option<u16>),
     Address(SocketAddr),
+}
+
+impl Web {
+    fn write(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Web::Port(Some(port)) => write!(f, "localhost:{}", port),
+            Web::Port(None) => write!(f, "localhost:*"),
+            Web::Address(addr) => write!(f, "{}", addr),
+        }
+    }
 }
 
 /// Configuration with rules.
@@ -89,9 +99,9 @@ pub struct Config {
     pub rules: Vec<Rule>,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq)]
 pub enum Error {
-    IoError(String),
+    IoError(String, String),
     JsonError(String),
     ConfigError(String),
     SyntaxError(String),
@@ -120,7 +130,7 @@ impl std::fmt::Display for Config {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::IoError(err) => write!(f, "I/O error: {}", err),
+            Error::IoError(file, err) => write!(f, "{}: {}", file, err),
             Error::JsonError(err) => write!(f, "JSON error: {}", err),
             Error::ConfigError(ref txt) => write!(f, "Config error: {}", txt),
             Error::SyntaxError(ref txt) => write!(f, "Syntax error: {}", txt),
@@ -131,17 +141,11 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {
     fn description(&self) -> &str {
         match self {
-            Error::IoError(_) => "I/O error",
+            Error::IoError(_, _) => "I/O error",
             Error::JsonError(_) => "JSON error",
             Error::ConfigError(_) => "config error",
             Error::SyntaxError(_) => "syntax error",
         }
-    }
-}
-
-impl std::convert::From<std::io::Error> for Error {
-    fn from(error: std::io::Error) -> Self {
-        Error::IoError(format!("{}", error))
     }
 }
 
@@ -198,7 +202,8 @@ impl Config {
     /// Read a JSON configuration from a file name.
     pub fn from_file(filename: &str) -> Result<Config> {
         info!("Loading configuration using path '{}'", filename);
-        let contents = fs::read_to_string(filename)?;
+        let contents = fs::read_to_string(filename)
+            .map_err(|e| Error::IoError(filename.to_string(), e.to_string()))?;
         let config = serde_json::from_str(&contents)?;
         Ok(config)
     }
@@ -244,10 +249,23 @@ impl std::str::FromStr for Web {
 
 impl std::fmt::Display for Web {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.write(f)
+    }
+}
+
+impl std::fmt::Debug for Web {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.write(f)
+    }
+}
+
+impl std::fmt::Debug for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Web::Port(Some(port)) => write!(f, "localhost:{}", port),
-            Web::Port(None) => write!(f, "localhost:*"),
-            Web::Address(addr) => write!(f, "{}", addr),
+            Error::IoError(file, msg) => write!(f, "{}: {}", file, msg),
+            Error::JsonError(msg) => write!(f, "JSON error: {}", msg),
+            Error::ConfigError(msg) => write!(f, "config error: {}", msg),
+            Error::SyntaxError(msg) => write!(f, "syntax error: {}", msg),
         }
     }
 }

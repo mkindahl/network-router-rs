@@ -20,14 +20,14 @@ extern crate router;
 use clap::{App, Arg};
 use log::debug;
 use router::{config::Config, session::Manager};
-use std::str::FromStr;
+use std::{error::Error, str::FromStr};
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
     let matches = App::new("Network Router")
-        .version("0.1")
+        .version("0.2")
         .author("Mats Kindahl <mats.kindahl@gmail.com>")
         .help("Simple port-based network router implemented in Rust using Tokio.")
         .arg(
@@ -35,15 +35,15 @@ async fn main() {
                 .short("f")
                 .long("config-file")
                 .value_name("FILE")
-                .help("Read config from FILE")
+                .help("Read configuration from FILE")
                 .takes_value(true),
         )
         .arg(
             Arg::with_name("config_string")
                 .short("c")
-                .long("config")
+                .long("config-string")
                 .value_name("STRING")
-                .help("Read config from STRING")
+                .help("Read configuration from STRING")
                 .takes_value(true),
         )
         .arg(
@@ -56,13 +56,11 @@ async fn main() {
 
     // Config string takes precedence, if given.
     let config = match matches.value_of("config_string") {
-        Some(config_string) => {
-            Config::from_str(&config_string).expect("Unable to read config string")
-        }
+        Some(config_string) => Config::from_str(&config_string)?,
         None => {
-            let config_file = matches.value_of("config_file").unwrap_or("config.yaml");
-            debug!("Reading from file '{}'", config_file);
-            Config::from_file(&config_file).expect("unable to read config file")
+            let config_file = matches.value_of("config_file").unwrap_or("config.json");
+            debug!("Reading configuration from file '{}'", config_file);
+            Config::from_file(&config_file)?
         }
     };
 
@@ -71,5 +69,6 @@ async fn main() {
         manager.add_rule(rule).await;
     }
 
-    manager.start().await
+    manager.start().await;
+    Ok(())
 }

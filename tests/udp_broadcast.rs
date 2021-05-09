@@ -23,16 +23,13 @@ const CONFIG: &str = r#"{
 #[test]
 fn test_basic() -> Result<(), Box<dyn Error>> {
     let rule = Rule::from_json(CONFIG)?;
-
-    let msgs = vec!["Just a test", "Another test"];
     let mut harness = Harness::new(rule, 2357);
 
     harness.start()?;
 
     // For each in a list of strings, send it and verify that it
     // arrives correctly to all destinations.
-    for msg in msgs {
-        harness.send_str(msg)?;
-    }
+    harness.send_str(b"Just a test")?;
+    harness.send_str(b"Another test")?;
     Ok(())
 }

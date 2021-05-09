@@ -31,8 +31,7 @@ const UPDATE_RULE: &str = r#"{
 #[test]
 fn test_json() {
     let mut harness = Harness::new(Rule::from_json(CONFIG).unwrap(), 2357);
-
-    harness.start().expect("started");
+    harness.start().expect("unable to start harness");
 
     // Ask for the rules that the harness was configured with. We
     // should find them all.

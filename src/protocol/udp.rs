@@ -16,7 +16,6 @@ use crate::{
     protocol::Result,
     session::{strategy::Strategy, Rule},
 };
-use log::debug;
 use std::net::SocketAddr;
 use tokio::net::UdpSocket;
 
@@ -51,12 +50,10 @@ impl UdpSession {
         loop {
             let mut buf = [0; 1500];
             let bytes = socket.recv(&mut buf).await?;
-            debug!("Receiving {} bytes", bytes);
             if bytes == 0 {
                 break;
             }
             for addr in &strategy.destinations() {
-                debug!("Sending {} bytes to address {}", bytes, addr);
                 socket.send_to(&buf[0..bytes], &addr).await?;
             }
         }

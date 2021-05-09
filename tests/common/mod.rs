@@ -3,7 +3,6 @@ extern crate router;
 use bytes::Buf;
 use http::uri::{Authority, InvalidUri, Scheme};
 use hyper::{header, Body, Client, Method, Request, StatusCode, Uri};
-use log::debug;
 use router::{
     config::{self, Config, Web},
     session::{Mode, Rule},
@@ -14,7 +13,6 @@ use std::{
     io::{self, BufRead, BufReader},
     net::UdpSocket,
     process::{Child, Command, Stdio},
-    str::from_utf8,
 };
 use tokio::runtime::Runtime;
 
@@ -119,15 +117,15 @@ impl Harness {
     /// received in the receive sockets.
     #[cfg(test)]
     #[allow(dead_code)]
-    pub fn send_str(&mut self, packet: &str) -> Result<(), Error> {
+    pub fn send_str(&mut self, packet: &[u8]) -> Result<(), Error> {
         match self.state {
             Some(ref state) => match self.rule.mode {
                 Mode::Broadcast => {
-                    state.sender.send_to(packet.as_bytes(), self.rule.source)?;
+                    state.sender.send_to(packet, self.rule.source)?;
                     for receiver in &state.receivers {
                         let mut buf = [0; 1500];
                         let bytes = receiver.recv(&mut buf)?;
-                        assert_eq!(Ok(packet), from_utf8(&buf[0..bytes]));
+                        assert_eq!(packet, &buf[0..bytes]);
                     }
                     Ok(())
                 }
@@ -254,7 +252,6 @@ fn wait_until_started(mut child: Child) -> Result<Child, Error> {
             return Err(Error(format!("Router exited with status {}", status)));
         }
 
-        debug!("{}", buf);
         if bytes == 0 || buf.contains("session started") {
             break;
         }
