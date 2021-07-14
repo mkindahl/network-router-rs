@@ -33,14 +33,51 @@ cargo run --bin network-router -- --config-file=config.json
 
 You can get a list of command-line options using `--help`.
 
+# Advantages
+
+## Small and configurable
+
+Avoiding duplication of libraries and allowing features to be used or
+compiled out.
+
+## Easy to deploy
+
+A single binary to install. No configuration files or template files
+are necessary and the default configuration can be compiled in. If
+browser support is added, the templates are compiled in using Askama.
+
+## Efficient use of resources
+
+Using Tokio instead of hand-built thread management.
+
+## JSON API
+
+Proxies are part of a bigger system and it is important to integrate
+the router with other systems. Since the most common and flexible
+format is JSON over HTTP, this is what we use.
+
+## Web Interface
+
+For simple applications, it is important to be able to get information
+from it
+
+## Monitor
+
+Shall we support SNMP and/or Prometheous?
+
 # Configuration file format
 
-The configuration file is in JSON and is split into separate sections
-with one section for each forwarding configuration:
+The configuration file is in JSON and is split into several sections.
+
+## The `rules` section
+
+The rules section contains one rule for each forwarding
+configuration. For example:
+
 
 ```json
 {
-    "sections": [
+    "rules": [
 	{
 	    "protocol":"udp",
 	    "mode":"broadcast",

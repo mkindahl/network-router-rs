@@ -55,6 +55,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .get_matches();
 
     // Config string takes precedence, if given.
+    //
+    // Consider if we should allow the config string to just override
+    // the configuration in the config file, if a config file is
+    // given.
     let config = match matches.value_of("config_string") {
         Some(config_string) => Config::from_str(&config_string)?,
         None => {

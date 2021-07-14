@@ -1,14 +1,13 @@
 pub mod rules;
 pub mod strategy;
 
-use crate::{protocol, protocol::udp::UdpSession, rest, session::strategy::StrategyFactory};
+use crate::{
+    config::Config, protocol, protocol::udp::UdpSession, session::strategy::StrategyFactory, web,
+};
 use async_trait::async_trait;
 use futures::{stream::FuturesUnordered, StreamExt};
 pub use rules::{Database, Mode, Protocol, Route, Rule};
-use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::Arc,
-};
+use std::{net::SocketAddr, sync::Arc};
 use tokio::{
     sync::{oneshot::Sender, RwLock},
     task::JoinHandle,
@@ -27,6 +26,8 @@ pub enum Action {
     Shutdown,
 }
 
+/// Sessions listen on sockets and process packets arriving over the
+/// socket.
 #[async_trait]
 pub trait Session {
     /// Start executing the session. This will unpack the session and
@@ -38,7 +39,8 @@ pub trait Session {
 /// as well as answers requests for information about sessions.
 pub struct Manager {
     sender: Option<Sender<Action>>,
-    addr: SocketAddr,
+    /// HTTP listen address for both JSON and HTML requests.
+    addr: Option<SocketAddr>,
     database: DbRef,
     sessions: FuturesUnordered<JoinHandle<protocol::Result<()>>>,
 }
@@ -59,10 +61,10 @@ impl Manager {
     }
 
     /// Create a new manager but do not start it.
-    pub fn new() -> Manager {
+    pub fn new(config: &Config) -> Manager {
         Manager {
             sender: None,
-            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 2357),
+            addr: config.http.map(|v| v.into()),
             database: Arc::new(RwLock::new(Database::new())),
             sessions: FuturesUnordered::new(),
         }
@@ -82,12 +84,15 @@ impl Manager {
 
     /// Start the manager by starting all tasks.
     pub async fn start(&mut self) {
-        let (sender, receiver) = tokio::sync::oneshot::channel::<Action>();
-        let service = tokio::spawn({
-            let database = self.database.clone();
-            rest::service(database, self.addr, receiver)
-        });
-        self.sender = Some(sender);
+        // Spawn HTTP API thread, if available.
+        if let Some(addr) = self.addr {
+            let (sender, receiver) = tokio::sync::oneshot::channel::<Action>();
+            let http_service = tokio::spawn({
+                let database = self.database.clone();
+                web::service(database, addr, receiver)
+            });
+            self.sender = Some(sender);
+        }
 
         while let Some(item) = self.sessions.next().await {
             match item {
@@ -106,15 +111,5 @@ impl Manager {
                 error!("Router already shut down");
             }
         }
-
-        if let Err(e) = service.await {
-            eprintln!("server error: {}", e);
-        }
-    }
-}
-
-impl Default for Manager {
-    fn default() -> Self {
-        Self::new()
     }
 }

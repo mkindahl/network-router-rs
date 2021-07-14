@@ -1,0 +1,10 @@
+<html>
+  <body>
+    <table border="1">
+      <tr><th>Mode</th><th>Source</th><th>Destinations</th></tr>
+      {% for rule in rules %}
+      <tr><td>{{ rule.mode }}</td><td>{{ rule.source }}</td></tr>
+      {% endfor %}
+    </table>
+  </body>
+</html>

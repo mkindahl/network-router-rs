@@ -31,5 +31,5 @@ macro_rules! assert_matches {
 
 pub mod config;
 pub mod protocol;
-pub mod rest;
 pub mod session;
+pub mod web;

@@ -45,7 +45,7 @@
 //!
 //! ```json
 //! {
-//!     "web": {
+//!     "http": {
 //!         "port": "8080",
 //!     },
 //!     "rules": [
@@ -72,21 +72,29 @@
 
 use crate::session::{strategy, Rule};
 use serde::{Deserialize, Serialize};
-use std::{fs, net::SocketAddr};
+use std::{
+    fs,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+};
 
+/// Listening configuration option.
+///
+/// This will either be a port, in which case it will listen on the
+/// port on all interfaces, or an explicit socket address, in which
+/// case it will listen on exactly that address.
 #[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum Web {
+pub enum Listen {
     Port(Option<u16>),
     Address(SocketAddr),
 }
 
-impl Web {
+impl Listen {
     fn write(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Web::Port(Some(port)) => write!(f, "localhost:{}", port),
-            Web::Port(None) => write!(f, "localhost:*"),
-            Web::Address(addr) => write!(f, "{}", addr),
+            Listen::Port(Some(port)) => write!(f, "localhost:{}", port),
+            Listen::Port(None) => write!(f, "localhost:*"),
+            Listen::Address(addr) => write!(f, "{}", addr),
         }
     }
 }
@@ -95,7 +103,7 @@ impl Web {
 #[derive(PartialEq, Debug, Serialize, Deserialize)]
 pub struct Config {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub web: Option<Web>,
+    pub http: Option<Listen>,
     pub rules: Vec<Rule>,
 }
 
@@ -184,14 +192,9 @@ impl Config {
     /// Create a new empty configuration.
     pub fn new() -> Config {
         Config {
-            web: None,
+            http: None,
             rules: Vec::new(),
         }
-    }
-
-    pub fn set_port(&mut self, port: u16) -> &mut Self {
-        self.web = Some(Web::Port(Some(port)));
-        self
     }
 
     /// Add a rule to the configuration.
@@ -229,15 +232,27 @@ impl std::str::FromStr for Config {
     }
 }
 
-impl std::str::FromStr for Web {
+impl std::convert::From<Listen> for SocketAddr {
+    fn from(item: Listen) -> Self {
+        match item {
+            Listen::Address(addr) => addr,
+            Listen::Port(portspec) => {
+                let port = if let Some(port) = portspec { port } else { 0 };
+                SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port)
+            }
+        }
+    }
+}
+
+impl std::str::FromStr for Listen {
     type Err = Error;
     fn from_str(text: &str) -> Result<Self> {
         if let Ok(addr) = text.parse::<SocketAddr>() {
-            Ok(Web::Address(addr))
+            Ok(Listen::Address(addr))
         } else if let Ok(port) = text.parse::<u16>() {
-            Ok(Web::Port(Some(port)))
+            Ok(Listen::Port(Some(port)))
         } else if text == "*" {
-            Ok(Web::Port(None))
+            Ok(Listen::Port(None))
         } else {
             Err(Error::SyntaxError(format!(
                 "'{}' is neither a port description nor a socket address",
@@ -247,13 +262,13 @@ impl std::str::FromStr for Web {
     }
 }
 
-impl std::fmt::Display for Web {
+impl std::fmt::Display for Listen {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.write(f)
     }
 }
 
-impl std::fmt::Debug for Web {
+impl std::fmt::Debug for Listen {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.write(f)
     }

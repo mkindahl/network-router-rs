@@ -1,6 +1,6 @@
 //! Handlers for JSON requests
 
-use crate::{rest::DbRef, session::Rule};
+use crate::{session::Rule, web::DbRef};
 use serde::Serialize;
 use std::convert::Infallible;
 use warp::{self, http::StatusCode};
@@ -19,8 +19,9 @@ pub(crate) async fn list_rules(db: DbRef) -> Result<impl warp::Reply, Infallible
 pub(crate) async fn create_rule(rule: Rule, db: DbRef) -> Result<impl warp::Reply, Infallible> {
     let mut handle = db.write().await;
     let id = handle.create_rule(rule);
-    let json = warp::reply::json(&CreateReply { rule_id: id });
-    Ok(warp::reply::with_status(json, StatusCode::CREATED))
+    let json = warp::body::json().and_then(warp::reply::json(&CreateReply { rule_id: id }));
+    let form = warp::body::form().and_then(warp::reply::html());
+    Ok(warp::reply::with_status(json.or(form), StatusCode::CREATED))
 }
 
 pub(crate) async fn delete_rule(rule_id: usize, db: DbRef) -> Result<impl warp::Reply, Infallible> {

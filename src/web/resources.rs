@@ -1,8 +1,8 @@
 //! Resources (routes) for JSON.
 
 use crate::{
-    rest::{handlers, with_db},
     session::{DbRef, Rule},
+    web::{handlers, with_db},
 };
 use warp::Filter;
 
@@ -42,7 +42,6 @@ pub(crate) fn update_rule(
 ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
     warp::path!("rules" / usize)
         .and(warp::put())
-        .and(json_body())
         .and(with_db(db))
         .and_then(handlers::update_rule)
 }
